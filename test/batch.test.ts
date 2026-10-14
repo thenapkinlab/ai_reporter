@@ -9,7 +9,6 @@ const other = (): Label => ({ category: "other", confidence: 0.9, sensitive: [],
 function deps(classifier: Classifier, cache = new Map<string, Label>()): EngineDeps {
   return {
     classifier,
-    extractText: async () => null,
     cache: { get: async (id) => cache.get(id) ?? null, put: async (id, l) => void cache.set(id, l) },
     policy: { withhold: new Set(["medical", "financial"]), threshold: 0.6, releasedMessages: new Set(), releasedSenders: new Set() },
   };

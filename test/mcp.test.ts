@@ -32,7 +32,6 @@ function service(opts: { limits?: Limits; classifier?: Classifier | null } = {})
     new FixtureMailbox(),
     {
       classifier: opts.classifier ?? null,
-      extractText: async () => null,
       cache: store.labelCache(),
       policy: { withhold: new Set(["medical", "financial"]), threshold: 0.6, releasedMessages: new Set(), releasedSenders: new Set() },
     },

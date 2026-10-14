@@ -5,7 +5,7 @@ import type { APIGatewayProxyStructuredResultV2 as FunctionUrlResult, LambdaFunc
 import { createApp } from "../app";
 import { parseLimits, parseThreshold, type Config } from "../config";
 import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
-import { bedrockExtractor, BedrockClassifier } from "../aws/bedrock";
+import { BedrockClassifier } from "../aws/bedrock";
 import { DynamoTable } from "../aws/dynamo-table";
 import { KmsCipher } from "../aws/kms";
 import { loadParameters } from "../aws/ssm";
@@ -39,7 +39,6 @@ async function build() {
     accounts: new TableAccounts(new DynamoTable(required("TABLE_NAME", env.TABLE_NAME)), config.sessionSecret),
     cipher: new KmsCipher(required("KMS_KEY_ID", env.KMS_KEY_ID)),
     classifier: new BedrockClassifier(required("CLASSIFIER_MODEL", env.CLASSIFIER_MODEL), bedrock),
-    extractText: bedrockExtractor(required("EXTRACTOR_MODEL", env.EXTRACTOR_MODEL), bedrock),
   });
 }
 

@@ -23,7 +23,6 @@ function decision(id: string, action: Decision["action"], category: "medical" | 
     label: { category, confidence: 0.9, sensitive: [], reason: "test", source: "rules" },
     hits: card ? [{ type: "card_number", start: 0, end: 4, masked: "••••1111" }] : [],
     because: action !== "shared" ? [card ? "card number" : category] : [],
-    unscannedAttachments: [],
   };
 }
 

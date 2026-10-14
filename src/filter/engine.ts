@@ -16,11 +16,9 @@ import {
   type SensitiveItem,
 } from "./classifier";
 import { redactEmail } from "./redactor";
-import { senderDomain, type Attachment, type Email } from "../mail";
+import { senderDomain, type Email } from "../mail";
 
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const MAX_TEXT_CHARS = 20000;
-const SCANNABLE = /^(application\/pdf|image\/(jpeg|jpg|png|webp|gif|bmp)|text\/)/i;
 
 export interface Policy {
   withhold: Set<Category>;
@@ -36,8 +34,6 @@ export interface LabelCache {
 
 export interface EngineDeps {
   classifier: Classifier | null;
-  /** Converts a PDF or image to text; returns null if it can't. */
-  extractText: (att: Attachment, bytes: Uint8Array) => Promise<string | null>;
   cache: LabelCache;
   policy: Policy;
 }
@@ -68,28 +64,8 @@ export interface Decision {
   hits: Hit[];
   /** Why it was withheld or redacted, e.g. ["financial"] or ["home address"]. Empty when shared unchanged. */
   because: string[];
-  unscannedAttachments: string[];
   /** Present when shared or redacted: what the assistant receives. */
   filtered?: FilteredEmail;
-}
-
-interface ScannedAttachment {
-  att: Attachment;
-  text: string | null;
-  hits: Hit[];
-}
-
-async function scanAttachment(att: Attachment, deps: EngineDeps): Promise<ScannedAttachment> {
-  if (att.size > MAX_ATTACHMENT_BYTES || !SCANNABLE.test(att.mimeType)) return { att, text: null, hits: [] };
-  try {
-    const bytes = await att.load();
-    const text = att.mimeType.startsWith("text/") ? new TextDecoder().decode(bytes) : await deps.extractText(att, bytes);
-    if (text === null) return { att, text: null, hits: [] };
-    const clipped = text.slice(0, MAX_TEXT_CHARS);
-    return { att, text: clipped, hits: detect(clipped) };
-  } catch {
-    return { att, text: null, hits: [] };
-  }
 }
 
 export interface DecideInput {
@@ -104,6 +80,8 @@ export interface DecideInput {
 }
 
 export type Verdict = "share" | "redact" | "withhold";
+
+export const MODEL_UNAVAILABLE = "unchecked (model unavailable)";
 
 /**
  * Withhold whole: a withheld category (from the model or a clear rule), or (fail closed) the
@@ -120,7 +98,7 @@ export function decide(i: DecideInput): { verdict: Verdict; because: string[] } 
   }
   if (categories.length) return { verdict: "withhold", because: categories };
   // Removing values depends on the model, so without it nothing can be shared safely.
-  if (i.modelFailed) return { verdict: "withhold", because: ["unchecked (model unavailable)"] };
+  if (i.modelFailed) return { verdict: "withhold", because: [MODEL_UNAVAILABLE] };
   const items = new Set<SensitiveItem>([...i.label.sensitive, ...i.hits.map((h) => DETECTOR_ITEM[h.type])]);
   if (items.size) return { verdict: "redact", because: [...items].map((x) => ITEM_LABELS[x]) };
   return { verdict: "share", because: [] };
@@ -133,31 +111,25 @@ interface PreparedEmail {
   email: Email;
   domain: string;
   text: string;
-  attachmentText: string;
   hits: Hit[];
   signals: Signals;
-  unscannedAttachments: string[];
   cached: Label | null;
 }
 
+// Attachments are never opened: their contents never reach the assistant, so they don't need
+// checking. Their names do reach it, so names are classified and redacted like the body.
 async function prepareEmail(email: Email, deps: EngineDeps): Promise<PreparedEmail> {
   const domain = senderDomain(email.from);
-  const scanned = await Promise.all(email.attachments.map((a) => scanAttachment(a, deps)));
-  const attachmentText = scanned
-    .filter((s) => s.text)
-    .map((s) => `\n[Attachment: ${s.att.filename}]\n${s.text}`)
-    .join("");
-  const text = `${email.subject}\n${email.body}${attachmentText}`.slice(0, MAX_TEXT_CHARS);
-  const hits = [...detect(email.subject), ...detect(email.snippet), ...detect(email.body), ...scanned.flatMap((s) => s.hits)];
+  const names = email.attachments.map((a) => a.filename);
+  const text = `${email.subject}\n${email.body}${names.length ? `\n[Attachment names: ${names.join(", ")}]` : ""}`.slice(0, MAX_TEXT_CHARS);
+  const hits = [...detect(email.subject), ...detect(email.snippet), ...detect(email.body), ...names.flatMap((n) => detect(n))];
   const cached = await deps.cache.get(email.id);
   return {
     email,
     domain,
     text,
-    attachmentText,
     hits,
     signals: computeSignals(domain, text, hits),
-    unscannedAttachments: scanned.filter((s) => s.text === null).map((s) => s.att.filename),
     // A cached label has item types but no values, so it can't drive redaction: only labels
     // without sensitive items are reused; the rest go back to the model.
     cached: cached && cached.sensitive.length === 0 ? cached : null,
@@ -176,7 +148,7 @@ function finish(pe: PreparedEmail, label: Label, modelFailed: boolean, deps: Eng
     released: p.releasedMessages.has(email.id) || (domain !== "" && p.releasedSenders.has(domain)),
     policy: p,
   });
-  const base = { messageId: email.id, senderDomain: domain, label, hits, because, unscannedAttachments: pe.unscannedAttachments };
+  const base = { messageId: email.id, senderDomain: domain, label, hits, because };
   if (verdict === "withhold") return { ...base, action: "withheld" };
   const filtered: FilteredEmail = {
     id: email.id,
@@ -193,11 +165,12 @@ function finish(pe: PreparedEmail, label: Label, modelFailed: boolean, deps: Eng
   const values = label.values ?? [];
   const detected = new Set(hits.map((h) => DETECTOR_ITEM[h.type]));
   const unremovable = label.sensitive.filter((item) => !detected.has(item) && !values.some((v) => v.item === item));
-  const r = redactEmail({ subject: email.subject, body: email.body, attachmentText: pe.attachmentText, values });
+  const r = redactEmail({ subject: email.subject, body: email.body, attachmentNames: email.attachments.map((a) => a.filename), values });
   if (unremovable.length || r.missing.length) {
     return { ...base, because: [...because, "couldn't remove safely"], action: "withheld" };
   }
-  return { ...base, action: "redacted", filtered: { ...filtered, subject: r.subject, body: r.body, snippet: r.snippet } };
+  const attachments = filtered.attachments.map((a, i) => ({ ...a, filename: r.attachmentNames[i] ?? a.filename }));
+  return { ...base, action: "redacted", filtered: { ...filtered, subject: r.subject, body: r.body, snippet: r.snippet, attachments } };
 }
 
 /**

@@ -36,7 +36,24 @@ Claude / ChatGPT ──MCP + AuthKit token──► Lambda Function URL /mcp ─
 
 Counters are numbers in DynamoDB (`USAGE#…` per user, `MODELRPM#…` shared) that expire on their own. Change the
 defaults with the `userEmailsPer10Min`, `userEmailsPerDay`, `modelRequestsPerMinute` and `maxConcurrency` context
-values in `cdk.json`. Attachment text extraction (Nova Lite) has its own Bedrock quota and isn't counted yet.
+values in `cdk.json`.
+
+### Alarms (for you, the operator)
+
+CloudWatch alarms email the address in `alarmEmail` (or `budgetEmail`) through an SNS topic; confirm the
+subscription from the first email AWS sends. Users never get these: they see the tool's own "busy" or "limit
+reached" message, and their usage on the dashboard.
+
+| Alarm | Fires when |
+|---|---|
+| `agent-gateway-ModelBusy` | any request was refused as busy in 5 minutes (shared Bedrock budget full) |
+| `agent-gateway-ModelUnavailable` | any email was withheld because the classifier didn't answer, in 5 minutes |
+| `agent-gateway-UserLimits` | users hit their email limits 10+ times in an hour (loops, or limits too low) |
+| `agent-gateway-LambdaErrors` | 3+ Lambda errors in 5 minutes |
+| `agent-gateway-LambdaThrottles` | any request refused by the concurrency cap in 5 minutes |
+
+The gateway's metrics are counts only (CloudWatch Embedded Metric Format log lines): no user IDs, queries or
+anything about an email.
 - **Decision:** each email is shared unchanged, shared with values removed, or withheld whole.
   - **Withheld whole:** medical or financial emails (removing values from a lab result still leaves a lab result).
   - **Values removed:** in every other email, card numbers, bank accounts, government IDs, passwords and keys,
@@ -61,8 +78,9 @@ values in `cdk.json`. Attachment text extraction (Nova Lite) has its own Bedrock
 | A `filter_note` with counts and the reason **types** (e.g. "medical", "home address") | Which withheld email had which reason |
 | For `read_email` on a withheld email: a notice that it was withheld | Anything from emails it didn't ask for |
 
-Attachments are read inside the gateway only to make the decision: PDFs and images are transcribed by a Bedrock
-model, text files are read directly. The extracted text is used during the request and then discarded.
+Attachments are never opened or downloaded: the gateway reads only their names, types and sizes from Gmail.
+Names are sent to the assistant, so they're classified and redacted like the body. A sensitive document attached
+to a harmless email doesn't make the email sensitive, because its contents never leave Gmail.
 
 ## What we store
 
@@ -84,7 +102,7 @@ Never stored or logged: email bodies, subjects, senders, snippets, attachments o
 | `src/mcp.ts` | Stateless MCP over HTTP (JSON-RPC), tools and annotations |
 | `src/filter/` | Detectors, signals, classifier rules, policy engine |
 | `src/store/` | Single-table data model (`single-table.ts`) on a small `Table` interface; `MemoryTable` for dev/tests |
-| `src/aws/` | DynamoDB table, KMS cipher, Bedrock classifier/extractor, SSM secrets |
+| `src/aws/` | DynamoDB table, KMS cipher, Bedrock classifier, SSM secrets |
 | `src/platform/lambda.ts` | Lambda handler: Function URL event ↔ Request/Response |
 | `src/platform/local.ts` | Local dev server (in-memory, synthetic mailbox) |
 | `infra/` | CDK app and stack |
@@ -184,8 +202,7 @@ MTSamples' original terms are unclear, so it's for internal benchmarking only an
    The stack deploys to `region` in `cdk.json` (default `eu-north-1`, Stockholm). New free-plan accounts can
    only use the region they were created in.
 3. One-time per account and region: `npx cdk bootstrap aws://<account-id>/eu-north-1`.
-4. Bedrock: the defaults are Amazon Nova 2 Lite (classifier and value finder) and Nova Lite (PDF/image text),
-   called through EU cross-region inference profiles from `bedrockRegion` (default `eu-north-1`), so email stays
+4. Bedrock: the default is Amazon Nova 2 Lite (classifier and value finder), called through EU cross-region inference profiles from `bedrockRegion` (default `eu-north-1`), so email stays
    in the EU. Claude Haiku 4.5 (`eu.anthropic.claude-haiku-4-5-20251001-v1:0`) scores higher on the benchmarks;
    switch with `classifierModel` in `cdk.json`. If Bedrock isn't available in your region yet, set `bedrockRegion`
    to `us-east-1` and use the `us.` model IDs.

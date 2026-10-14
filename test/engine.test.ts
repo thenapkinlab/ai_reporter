@@ -17,7 +17,6 @@ function deps(over: Partial<EngineDeps> = {}): EngineDeps {
   const cache = new Map<string, Label>();
   return {
     classifier: null,
-    extractText: async () => null,
     cache: { get: async (id) => cache.get(id) ?? null, put: async (id, l) => void cache.set(id, l) },
     policy: policy(),
     ...over,
@@ -35,11 +34,12 @@ describe("filter engine on synthetic mail", () => {
     expect(d.filtered).toBeUndefined();
   });
 
-  it("withholds a bank statement as financial, using the attachment too", async () => {
+  it("withholds a bank statement as financial, without opening its attachment", async () => {
     const d = await run("fx-statement");
     expect(d.action).toBe("withheld");
     expect(d.label.category).toBe("financial");
-    expect(d.hits.map((h) => h.type)).toContain("iban");
+    // The IBAN is only inside the attachment, which is never read.
+    expect(d.hits.map((h) => h.type)).toEqual(["account_number"]);
   });
 
   it("shares a shop receipt with the card number removed", async () => {

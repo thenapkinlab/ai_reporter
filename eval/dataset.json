@@ -105,10 +105,9 @@
   {
    "id": "medh-01",
    "tags": [
-    "hard-positive",
-    "attachment"
+    "attachment-only"
    ],
-   "expected": "medical",
+   "expected": "other",
    "from": "Anna Berg <anna.berg@gmail.com>",
    "subject": "Mum's papers",
    "body": "Hi, see attached as discussed.",
@@ -117,7 +116,8 @@
      "filename": "scan_0042.txt",
      "text": "PATHOLOGY REPORT. Specimen: breast biopsy, left. Findings: invasive ductal carcinoma, grade 2. ER positive. Recommend oncology referral."
     }
-   ]
+   ],
+   "note": "Sensitive content is only in the attachment, which the gateway never opens or sends: the email body alone is shared."
   },
   {
    "id": "medh-02",
@@ -175,10 +175,9 @@
   {
    "id": "medh-07",
    "tags": [
-    "hard-positive",
-    "attachment"
+    "attachment-only"
    ],
-   "expected": "medical",
+   "expected": "other",
    "from": "noreply@scanner.example",
    "subject": "Scanned document",
    "body": "Your document has been scanned.",
@@ -187,7 +186,8 @@
      "filename": "doc.txt",
      "text": "Rx. Patient: J. Doe. Amoxicillin 500 mg, one capsule three times daily for 7 days. Signed Dr. L. Chen."
     }
-   ]
+   ],
+   "note": "Sensitive content is only in the attachment, which the gateway never opens or sends: the email body alone is shared."
   },
   {
    "id": "medh-08",
@@ -306,10 +306,9 @@
   {
    "id": "finh-01",
    "tags": [
-    "hard-positive",
-    "attachment"
+    "attachment-only"
    ],
-   "expected": "financial",
+   "expected": "other",
    "from": "Sam Lee <sam.lee@gmail.com>",
    "subject": "for the loan application",
    "body": "Here you go.",
@@ -319,9 +318,7 @@
      "text": "STATEMENT OF ACCOUNT. Account holder: S. Lee. IBAN GB82 WEST 1234 5698 7654 32. Opening balance 4,120.00. Closing balance 3,860.55."
     }
    ],
-   "redact": [
-    "iban"
-   ]
+   "note": "Sensitive content is only in the attachment, which the gateway never opens or sends: the email body alone is shared."
   },
   {
    "id": "finh-02",

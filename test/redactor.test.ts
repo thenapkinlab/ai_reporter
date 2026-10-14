@@ -20,7 +20,7 @@ describe("redactor", () => {
     const r = redactEmail({
       subject: "Delivery to 9 Pine Road",
       body: "We'll come to 9 Pine Road at noon.",
-      attachmentText: "",
+      attachmentNames: [],
       values: [{ item: "home_address", text: "9 Pine Road" }],
     });
     expect(r.subject).toBe("Delivery to [removed: home address]");
@@ -28,9 +28,10 @@ describe("redactor", () => {
     expect(r.missing).toEqual([]);
   });
 
-  it("reports values it can't find, and accepts values found only in attachments", () => {
-    const r = redactEmail({ subject: "s", body: "b", attachmentText: "Tenant address: 1 Main St", values: [{ item: "home_address", text: "1 Main St" }, { item: "date_of_birth", text: "01/01/1990" }] });
+  it("reports values it can't find, and redacts attachment names", () => {
+    const r = redactEmail({ subject: "s", body: "b", attachmentNames: ["passport_C01X00T47.pdf"], values: [{ item: "government_id", text: "C01X00T47" }, { item: "date_of_birth", text: "01/01/1990" }] });
     expect(r.missing.map((m) => m.item)).toEqual(["date_of_birth"]);
+    expect(r.attachmentNames).toEqual(["passport_[removed: government ID].pdf"]);
   });
 });
 

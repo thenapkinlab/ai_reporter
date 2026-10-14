@@ -1,11 +1,10 @@
 // Mail model shared by the Gmail client, the dev fixtures and the filter engine.
 
+/** Attachment metadata only: the gateway never downloads attachment contents. */
 export interface Attachment {
   filename: string;
   mimeType: string;
   size: number;
-  /** Loads raw bytes on demand; attachments are never stored. */
-  load: () => Promise<Uint8Array>;
 }
 
 export interface Email {

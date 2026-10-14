@@ -159,18 +159,8 @@ export class GmailMailbox implements Mailbox {
   async get(id: string): Promise<Email> {
     const m = await this.api<GmailMessage>(`/messages/${encodeURIComponent(id)}?format=full`);
     const { body, attachments } = parseParts(m.payload);
-    const atts: Attachment[] = attachments.map((a) => ({
-      filename: a.filename,
-      mimeType: a.mimeType,
-      size: a.size,
-      load: async () => {
-        if (a.data) return b64urlToBytes(a.data);
-        const r = await this.api<{ data: string }>(
-          `/messages/${encodeURIComponent(id)}/attachments/${encodeURIComponent(a.attachmentId ?? "")}`,
-        );
-        return b64urlToBytes(r.data);
-      },
-    }));
+    // Names, types and sizes only: attachment contents are never downloaded.
+    const atts: Attachment[] = attachments.map((a) => ({ filename: a.filename, mimeType: a.mimeType, size: a.size }));
     return {
       id: m.id,
       from: header(m.payload, "From"),

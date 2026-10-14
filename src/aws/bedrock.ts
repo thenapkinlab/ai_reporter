@@ -1,14 +1,7 @@
-// Amazon Bedrock for the two model jobs: labelling an email (a small text model) and
-// reading text out of PDF and image attachments (a multimodal model). Both use the
-// Converse API, so swapping models is a config change.
+// Amazon Bedrock for the classifier: labels emails and finds values to remove, through the
+// Converse API, so swapping models is a config change. Attachments are never sent to a model.
 
-import {
-  BedrockRuntimeClient,
-  ConverseCommand,
-  type ContentBlock,
-  type DocumentFormat,
-  type ImageFormat,
-} from "@aws-sdk/client-bedrock-runtime";
+import { BedrockRuntimeClient, ConverseCommand, type ContentBlock } from "@aws-sdk/client-bedrock-runtime";
 import {
   CLASSIFIER_PROMPT,
   batchMessage,
@@ -20,11 +13,6 @@ import {
   type Label,
 } from "../filter/classifier";
 import { randomId } from "../crypto";
-import type { Attachment } from "../mail";
-
-// Bedrock's Converse limits for inline attachments.
-const MAX_DOCUMENT_BYTES = 4.5 * 1024 * 1024;
-const MAX_IMAGE_BYTES = 3.75 * 1024 * 1024;
 
 function text(blocks: ContentBlock[] | undefined): string {
   return (blocks ?? []).map((b) => ("text" in b && b.text) || "").join("");
@@ -88,45 +76,3 @@ export class BedrockClassifier implements Classifier {
 
 /** Per-email text budget inside a batch (about 1,000 tokens each). */
 export const BATCH_CHARS_PER_EMAIL = 4000;
-
-const IMAGE_FORMATS: Record<string, ImageFormat> = {
-  "image/png": "png",
-  "image/jpeg": "jpeg",
-  "image/jpg": "jpeg",
-  "image/gif": "gif",
-  "image/webp": "webp",
-};
-
-/** Returns an extractor for the filter engine: PDF or image bytes in, plain text out (or null). */
-export function bedrockExtractor(modelId: string, client = new BedrockRuntimeClient({})) {
-  return async (att: Attachment, bytes: Uint8Array): Promise<string | null> => {
-    let block: ContentBlock;
-    if (att.mimeType === "application/pdf") {
-      if (bytes.length > MAX_DOCUMENT_BYTES) return null;
-      // Document names allow only letters, digits, spaces, hyphens, parentheses and brackets.
-      block = { document: { format: "pdf" as DocumentFormat, name: "attachment", source: { bytes } } };
-    } else if (IMAGE_FORMATS[att.mimeType]) {
-      if (bytes.length > MAX_IMAGE_BYTES) return null;
-      block = { image: { format: IMAGE_FORMATS[att.mimeType]!, source: { bytes } } };
-    } else {
-      return null;
-    }
-    const r = await client.send(
-      new ConverseCommand({
-        modelId,
-        messages: [
-          {
-            role: "user",
-            content: [
-              block,
-              { text: "Transcribe all text in this file as plain text. Output only the text, no commentary." },
-            ],
-          },
-        ],
-        inferenceConfig: { maxTokens: 4000, temperature: 0 },
-      }),
-    );
-    const out = text(r.output?.message?.content).trim();
-    return out || null;
-  };
-}

@@ -68,8 +68,8 @@ export function redactText(text: string, values: RemoveValue[]): string {
 export interface RedactInput {
   subject: string;
   body: string;
-  /** Converted attachment text. Attachment contents are never returned, but model values may come from there. */
-  attachmentText: string;
+  /** Attachment file names (sent to the assistant, so they're redacted too). Contents are never read. */
+  attachmentNames: string[];
   values: RemoveValue[];
 }
 
@@ -78,6 +78,7 @@ export interface Redacted {
   body: string;
   /** A fresh snippet from the redacted body (Gmail's own snippet could cut a value in half). */
   snippet: string;
+  attachmentNames: string[];
   /** Model values found nowhere in the email: the engine withholds the email when this isn't empty. */
   missing: RemoveValue[];
   /** How many values were replaced in the subject and body. */
@@ -86,7 +87,7 @@ export interface Redacted {
 
 export function redactEmail(i: RedactInput): Redacted {
   const missing = i.values.filter(
-    (v) => !findValue(i.subject, v.text).length && !findValue(i.body, v.text).length && !findValue(i.attachmentText, v.text).length,
+    (v) => !findValue(i.subject, v.text).length && !findValue(i.body, v.text).length && !i.attachmentNames.some((n) => findValue(n, v.text).length),
   );
   const subjectSpans = spansIn(i.subject, i.values);
   const bodySpans = spansIn(i.body, i.values);
@@ -95,6 +96,7 @@ export function redactEmail(i: RedactInput): Redacted {
     subject: apply(i.subject, subjectSpans),
     body,
     snippet: body.replace(/\s+/g, " ").trim().slice(0, 200),
+    attachmentNames: i.attachmentNames.map((n) => redactText(n, i.values)),
     missing,
     removed: subjectSpans.length + bodySpans.length,
   };

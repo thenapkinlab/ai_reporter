@@ -7,7 +7,7 @@ const enc = new TextEncoder();
 
 function textAttachment(filename: string, text: string) {
   const bytes = enc.encode(text);
-  return { filename, mimeType: "text/plain", size: bytes.length, load: async () => bytes };
+  return { filename, mimeType: "text/plain", size: bytes.length };
 }
 
 export const FIXTURE_EMAILS: Email[] = [

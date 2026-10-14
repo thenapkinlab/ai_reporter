@@ -25,7 +25,6 @@ const app = createApp({
   accounts: new TableAccounts(new MemoryTable(), randomKeyB64()),
   cipher: new LocalCipher(randomKeyB64()),
   classifier: null,
-  extractText: async () => null,
   devMailbox: () => new FixtureMailbox(),
 });
 

@@ -1492,20 +1492,14 @@
   {
    "id": "adv-en-04",
    "tags": [
-    "adversarial",
-    "lang:en",
-    "attachment"
+    "attachment-only",
+    "lang:en"
    ],
-   "expect": "redact",
+   "expect": "share",
    "from": "Landlord <jim@lettings.example>",
    "subject": "Signed lease attached",
    "body": "Hi, the signed lease is attached. Move-in is Saturday 1 November at 10am.",
-   "remove": [
-    {
-     "item": "home_address",
-     "value": "18 Elm Grove, Flat 2, Leeds LS6 2AB"
-    }
-   ],
+   "remove": [],
    "keep": [
     "Saturday 1 November at 10am"
    ],

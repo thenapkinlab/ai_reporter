@@ -20,7 +20,6 @@ export interface AppDeps {
   accounts: Accounts;
   cipher: TokenCipher;
   classifier: Classifier | null;
-  extractText: EngineDeps["extractText"];
   /** Dev only: the mailbox every user gets instead of Gmail. */
   devMailbox?: () => Mailbox;
 }
@@ -104,7 +103,6 @@ export function createApp(deps: AppDeps) {
       } else {
         const engine: EngineDeps = {
           classifier,
-          extractText: deps.extractText,
           cache: store.labelCache(),
           policy: await store.policy(cfg.withholdThreshold),
         };

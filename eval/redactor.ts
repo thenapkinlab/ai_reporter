@@ -124,10 +124,7 @@ function toEmail(c: RedactCase): Email {
     date: "",
     snippet: c.body.replace(/\s+/g, " ").slice(0, 150),
     body: c.body,
-    attachments: (c.attachments ?? []).map((a) => {
-      const bytes = new TextEncoder().encode(a.text);
-      return { filename: a.filename, mimeType: "text/plain", size: bytes.length, load: async () => bytes };
-    }),
+    attachments: (c.attachments ?? []).map((a) => ({ filename: a.filename, mimeType: "text/plain", size: a.text.length })),
   };
 }
 
@@ -164,7 +161,6 @@ async function runPipeline(name: string, cases: RedactCase[], classifier: Classi
   const cache = new Map<string, Label>();
   const deps: EngineDeps = {
     classifier,
-    extractText: async () => null,
     cache: { get: async (id) => cache.get(id) ?? null, put: async (id, l) => void cache.set(id, l) },
     policy: DEFAULT_POLICY,
   };

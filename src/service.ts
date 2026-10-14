@@ -6,6 +6,8 @@ import { toolError, type ToolBackend, type ToolResult } from "./mcp";
 import { DEFAULT_LIMITS, type Limits } from "./config";
 import { limitMessage, type Reservation } from "./limits";
 import { ModelBusyError } from "./filter/classifier";
+import { MODEL_UNAVAILABLE } from "./filter/engine";
+import { countMetric } from "./metrics";
 import { randomId } from "./crypto";
 import { newRunId, type RunMeta, type UserStore } from "./store/types";
 
@@ -39,6 +41,7 @@ export class GatewayService implements ToolBackend {
   ) {}
 
   private async record(tool: string, query: string, decisions: Decision[]) {
+    countMetric("ModelUnavailable", decisions.filter((d) => d.because.includes(MODEL_UNAVAILABLE)).length);
     const now = this.now();
     await this.store.recordRun(newRunId(now, randomId()), { ...this.meta, tool, query }, decisions, now);
   }
@@ -47,12 +50,16 @@ export class GatewayService implements ToolBackend {
   private async withBudget<T>(ids: string[], work: (ids: string[]) => Promise<T>): Promise<{ result: T; reservation: Reservation } | ToolResult> {
     const now = this.now();
     const reservation = await this.store.reserveEmails(ids.length, this.limits, now);
+    if (reservation.limitedBy) countMetric("UserLimitReached");
     if (ids.length > 0 && reservation.allowed === 0) return toolError(limitMessage(reservation, this.limits));
     try {
       return { result: await work(ids.slice(0, reservation.allowed)), reservation };
     } catch (e) {
       await this.store.releaseEmails(reservation.allowed, now);
-      if (e instanceof ModelBusyError) return toolError(BUSY);
+      if (e instanceof ModelBusyError) {
+        countMetric("ModelBusy");
+        return toolError(BUSY);
+      }
       throw e;
     }
   }

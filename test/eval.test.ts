@@ -15,7 +15,7 @@ describe("evaluation set", () => {
 
   it("covers every case type", () => {
     const tags = new Set(cases.flatMap((c) => c.tags));
-    for (const t of ["clear", "hard-positive", "hard-negative", "adversarial", "redaction", "mixed", "attachment"]) {
+    for (const t of ["clear", "hard-positive", "hard-negative", "adversarial", "redaction", "mixed", "attachment-only"]) {
       expect(tags.has(t)).toBe(true);
     }
   });

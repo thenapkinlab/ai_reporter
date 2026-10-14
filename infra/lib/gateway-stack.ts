@@ -1,11 +1,16 @@
 // Everything the gateway needs on AWS, as one CloudFormation stack:
 // a DynamoDB table, a KMS key, the Lambda function with a public HTTPS URL,
-// least-privilege permissions, a log group, and an optional monthly budget alert.
+// least-privilege permissions, a log group, CloudWatch alarms for the operator, and an
+// optional monthly budget alert.
 
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
 import * as budgets from "aws-cdk-lib/aws-budgets";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
+import * as cwActions from "aws-cdk-lib/aws-cloudwatch-actions";
+import * as sns from "aws-cdk-lib/aws-sns";
+import * as subs from "aws-cdk-lib/aws-sns-subscriptions";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
@@ -24,7 +29,6 @@ export interface GatewayStackProps extends StackProps {
   /** Region for Bedrock calls; can differ from the stack's region. */
   bedrockRegion: string;
   classifierModel: string;
-  extractorModel: string;
   withholdThreshold: string;
   mcpAudience?: string;
   /** Per-user email limits and the shared classifier budget (requests per minute). */
@@ -35,6 +39,8 @@ export interface GatewayStackProps extends StackProps {
   maxConcurrency: number;
   /** If set, a $10/month budget emails this address at 80% and 100%. */
   budgetEmail?: string;
+  /** Where CloudWatch alarms are emailed (the operator, never users). Falls back to budgetEmail. */
+  alarmEmail?: string;
 }
 
 export class GatewayStack extends Stack {
@@ -82,7 +88,6 @@ export class GatewayStack extends Stack {
         WORKOS_CLIENT_ID: props.workosClientId,
         BEDROCK_REGION: props.bedrockRegion,
         CLASSIFIER_MODEL: props.classifierModel,
-        EXTRACTOR_MODEL: props.extractorModel,
         WITHHOLD_THRESHOLD: props.withholdThreshold,
         USER_EMAILS_PER_10MIN: props.userEmailsPer10Min,
         USER_EMAILS_PER_DAY: props.userEmailsPerDay,
@@ -124,6 +129,34 @@ export class GatewayStack extends Stack {
 
     // Public HTTPS endpoint. Authentication happens in the app (AuthKit tokens and sessions).
     const fnUrl = fn.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });
+
+    // Alarms go to the operator by email (SNS asks you to confirm the subscription once).
+    // Users never see these; they get the tool's own "busy" or "limit reached" messages.
+    const alarmTopic = new sns.Topic(this, "AlarmTopic", { displayName: "Agent gateway alarms" });
+    const alarmEmail = props.alarmEmail ?? props.budgetEmail;
+    if (alarmEmail) alarmTopic.addSubscription(new subs.EmailSubscription(alarmEmail));
+    const custom = (metricName: string, period: Duration) =>
+      new cloudwatch.Metric({ namespace: "AgentGateway", metricName, statistic: "Sum", period });
+    const alarms: [string, cloudwatch.IMetric, number, string][] = [
+      ["ModelBusy", custom("ModelBusy", Duration.minutes(5)), 1, "Requests refused because the shared Bedrock budget was full. Ask AWS for a higher quota or lower usage."],
+      ["ModelUnavailable", custom("ModelUnavailable", Duration.minutes(5)), 1, "Emails withheld because the classifier didn't answer (errors or throttling)."],
+      ["UserLimits", custom("UserLimitReached", Duration.hours(1)), 10, "Users hitting their email limits often: check for loops or raise the limits."],
+      ["LambdaErrors", fn.metricErrors({ period: Duration.minutes(5), statistic: "Sum" }), 3, "Gateway Lambda errors."],
+      ["LambdaThrottles", fn.metricThrottles({ period: Duration.minutes(5), statistic: "Sum" }), 1, "Lambda refused requests: the concurrency cap was reached."],
+    ];
+    for (const [id, metric, threshold, description] of alarms) {
+      const alarm = new cloudwatch.Alarm(this, `${id}Alarm`, {
+        alarmName: `agent-gateway-${id}`,
+        alarmDescription: description,
+        metric,
+        threshold,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+      alarm.addAlarmAction(new cwActions.SnsAction(alarmTopic));
+      alarm.addOkAction(new cwActions.SnsAction(alarmTopic));
+    }
 
     if (props.budgetEmail) {
       new budgets.CfnBudget(this, "MonthlyBudget", {

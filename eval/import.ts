@@ -117,12 +117,12 @@ function asEmail(
   tags: string[],
   subject: string,
   text: string,
-  attach: boolean,
+  _attach: boolean,
   from = "noreply@service.example",
 ): EvalCase {
-  return attach
-    ? { id, expected, tags: [...tags, "attachment"], from, subject, body: "Please find the document attached.", attachments: [{ filename: "document.txt", text: clip(text) }] }
-    : { id, expected, tags, from, subject, body: clip(text) };
+  // Always in the body: the gateway never opens attachments, so a document attached to a bland
+  // email is simply not seen (or sent), and can't be tested that way.
+  return { id, expected, tags, from, subject, body: clip(text) };
 }
 
 // ---------------------------------------------------------------- sources

@@ -20,7 +20,6 @@ new GatewayStack(app, "AgentGateway", {
   ssmPrefix: ctx("ssmPrefix", "/agent-gateway"),
   bedrockRegion: ctx("bedrockRegion", "eu-north-1"),
   classifierModel: ctx("classifierModel", "eu.amazon.nova-2-lite-v1:0"),
-  extractorModel: ctx("extractorModel", "eu.amazon.nova-lite-v1:0"),
   withholdThreshold: ctx("withholdThreshold", "0.6"),
   userEmailsPer10Min: ctx("userEmailsPer10Min", "100"),
   userEmailsPerDay: ctx("userEmailsPerDay", "500"),
@@ -28,4 +27,5 @@ new GatewayStack(app, "AgentGateway", {
   maxConcurrency: Number(ctx("maxConcurrency", "10")),
   mcpAudience: (app.node.tryGetContext("mcpAudience") as string | undefined) || undefined,
   budgetEmail: (app.node.tryGetContext("budgetEmail") as string | undefined) || undefined,
+  alarmEmail: (app.node.tryGetContext("alarmEmail") as string | undefined) || undefined,
 });
