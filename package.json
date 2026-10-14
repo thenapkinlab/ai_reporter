@@ -1,0 +1,34 @@
+{
+  "name": "agent-gateway",
+  "version": "0.1.0",
+  "description": "Privacy gateway between AI assistants (Claude, ChatGPT) and Gmail, with a per-user audit dashboard.",
+  "scripts": {
+    "dev": "tsx watch src/platform/local.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy",
+    "destroy": "cdk destroy"
+  },
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1147.0",
+    "@aws-sdk/client-dynamodb": "^3.1147.0",
+    "@aws-sdk/client-kms": "^3.1147.0",
+    "@aws-sdk/client-ssm": "^3.1147.0",
+    "@aws-sdk/lib-dynamodb": "^3.1147.0",
+    "jose": "^6.2.12"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.164",
+    "@types/node": "^26.6.4",
+    "aws-cdk": "^2.1145.0",
+    "aws-cdk-lib": "^2.272.0",
+    "constructs": "^10.8.1",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  },
+  "private": true
+}

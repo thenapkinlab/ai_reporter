@@ -1,0 +1,98 @@
+// What the app needs from storage, independent of the database behind it.
+
+import type { Category } from "../filter/classifier";
+import type { Decision, LabelCache, Policy } from "../filter/engine";
+
+export type Assistant = "claude" | "chatgpt" | "unknown";
+export type RunType = "background_likely" | "unknown";
+
+export interface RunMeta {
+  assistant: Assistant;
+  clientId: string | null;
+  userAgent: string | null;
+  headerNames: string;
+  tool: string;
+  query: string | null;
+}
+
+export interface RunRow {
+  id: string;
+  assistant: Assistant;
+  tool: string;
+  query: string | null;
+  run_type: RunType;
+  shared_count: number;
+  withheld_count: number;
+  redacted_count: number;
+  created_at: string;
+}
+
+export interface RunItemRow {
+  message_id: string;
+  sender_domain: string | null;
+  action: "shared" | "redacted" | "withheld";
+  category: Category;
+  confidence: number;
+  reason: string | null;
+  detectors: string | null;
+  masked_hints: string | null;
+  removed_attachments: number;
+  feedback: string | null;
+}
+
+export interface Totals {
+  read: number;
+  withheld: number;
+  redacted: number;
+  background: number;
+}
+
+/** Everything one signed-in user can read or change. */
+export interface UserStore {
+  readonly userId: string;
+  policy(threshold: number): Promise<Policy>;
+  settings(): Promise<{ medical: boolean; financial: boolean }>;
+  saveSettings(medical: boolean, financial: boolean): Promise<void>;
+  labelCache(): LabelCache;
+  recordRun(runId: string, meta: RunMeta, decisions: Decision[], now: Date): Promise<void>;
+  recentRuns(limit?: number): Promise<RunRow[]>;
+  run(runId: string): Promise<{ run: RunRow; items: RunItemRow[] } | null>;
+  totals(days?: number, now?: Date): Promise<Totals>;
+  feedback(messageId: string, decision: "release" | "keep"): Promise<void>;
+  deleteAll(): Promise<void>;
+}
+
+export interface GmailConnection {
+  gmail_address: string;
+  encrypted_refresh_token: string;
+}
+
+export interface Accounts {
+  forUser(userId: string): UserStore;
+  /** Creates the user or updates their email. */
+  upsertUser(id: string, email: string): Promise<void>;
+  /** Creates the user only if missing (MCP calls may arrive before the first dashboard sign-in). */
+  ensureUser(id: string, email: string): Promise<void>;
+  getGmail(userId: string): Promise<GmailConnection | null>;
+  saveGmail(userId: string, address: string, encryptedRefreshToken: string, scope: string): Promise<void>;
+  deleteGmail(userId: string): Promise<void>;
+}
+
+/**
+ * "Background, likely": the same assistant asked the same thing before, a whole number of hours ago (±5 min).
+ * Scheduled tasks run hourly or daily, so that rhythm is a strong hint nobody was chatting.
+ */
+export function inferRunType(query: string | null, priorTimes: Date[], now: Date): RunType {
+  if (!query) return "unknown";
+  for (const t of priorTimes) {
+    const mins = (now.getTime() - t.getTime()) / 60000;
+    const off = mins % 60;
+    if (mins >= 55 && (off <= 5 || off >= 55)) return "background_likely";
+  }
+  return "unknown";
+}
+
+/** Run IDs start with a fixed-width timestamp so they sort by time as database keys. */
+export function newRunId(now: Date, random: string): string {
+  return `${String(now.getTime()).padStart(13, "0")}-${random}`;
+}
