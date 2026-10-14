@@ -75,6 +75,20 @@ accuracy by case type, a threshold sweep, the confusion matrix, every miss and f
 Each model is scored twice: as the pipeline works today (rules can declare an email "other" without the model)
 and with the model consulted on every email.
 
+### Public datasets
+
+```bash
+npm run eval:import       # downloads (cached) and builds eval/external/ (git-ignored)
+npm run eval:redaction    # detector recall per value type and language, no model, no AWS
+npm run eval -- --external   # classifier benchmark on the public cases (needs aws login)
+```
+
+`eval:import` builds ~500 classifier cases from MTSamples (medical), Gretel synthetic finance documents in
+7 languages (financial, health insurance claims), and two public email sets (everyday mail, newsletters, spam),
+plus 3,000 Gretel texts with labelled sensitive values for the redaction benchmark. Review
+`eval/external/spotcheck.md` before trusting the scores. Licences: Gretel and the email sets are Apache-2.0/MIT;
+MTSamples' original terms are unclear, so it's for internal benchmarking only and is never committed.
+
 ## Deploy to AWS
 
 ### 1. AWS account and CLI

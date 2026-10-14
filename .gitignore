@@ -3,3 +3,4 @@ cdk.out/
 .env
 *.log
 eval/results/
+eval/external/

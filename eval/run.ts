@@ -159,7 +159,9 @@ function report(runs: ModelRun[], prepared: Prepared[], threshold: number): stri
 }
 
 async function main() {
-  const data = JSON.parse(readFileSync(join(here, "dataset.json"), "utf8")) as { cases: EvalCase[] };
+  const external = process.argv.includes("--external");
+  const file = external ? join(here, "external", "cases.json") : join(here, "dataset.json");
+  const data = JSON.parse(readFileSync(file, "utf8")) as { cases: EvalCase[] };
   const tagFilter = arg("tags");
   const limit = Number(arg("limit", "0"));
   let cases = data.cases;
