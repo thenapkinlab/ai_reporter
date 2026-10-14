@@ -9,7 +9,17 @@ import {
   type DocumentFormat,
   type ImageFormat,
 } from "@aws-sdk/client-bedrock-runtime";
-import { CLASSIFIER_PROMPT, parseModelLabel, type ClassifyInput, type Classifier, type Label } from "../filter/classifier";
+import {
+  CLASSIFIER_PROMPT,
+  batchMessage,
+  batchPrompt,
+  parseBatchLabels,
+  parseModelLabel,
+  type ClassifyInput,
+  type Classifier,
+  type Label,
+} from "../filter/classifier";
+import { randomId } from "../crypto";
 import type { Attachment } from "../mail";
 
 // Bedrock's Converse limits for inline attachments.
@@ -54,7 +64,30 @@ export class BedrockClassifier implements Classifier {
     if (!label) throw new Error("unparseable model output");
     return label;
   }
+
+  /** One request for several emails: Bedrock's per-minute request limits, not tokens, are the bottleneck. */
+  async classifyBatch(inputs: ClassifyInput[]): Promise<(Label | null)[]> {
+    if (!inputs.length) return [];
+    const marker = randomId().replace(/[^A-Za-z0-9]/g, "").slice(0, 10);
+    const r = await this.client.send(
+      new ConverseCommand({
+        modelId: this.modelId,
+        system: [{ text: batchPrompt(marker) }],
+        messages: [{ role: "user", content: [{ text: batchMessage(marker, inputs, BATCH_CHARS_PER_EMAIL) }] }],
+        inferenceConfig: { maxTokens: 80 + 90 * inputs.length, temperature: 0 },
+      }),
+    );
+    this.onCall?.({
+      inputTokens: r.usage?.inputTokens ?? 0,
+      outputTokens: r.usage?.outputTokens ?? 0,
+      latencyMs: r.metrics?.latencyMs ?? 0,
+    });
+    return parseBatchLabels(text(r.output?.message?.content), inputs.length);
+  }
 }
+
+/** Per-email text budget inside a batch (about 1,000 tokens each). */
+export const BATCH_CHARS_PER_EMAIL = 4000;
 
 const IMAGE_FORMATS: Record<string, ImageFormat> = {
   "image/png": "png",

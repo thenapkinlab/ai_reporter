@@ -5,6 +5,7 @@
 //   npm run eval -- --external                     # + public-dataset emails (npm run eval:import first)
 //   npm run eval -- --external --docs 300          # + 300 public finance documents with sensitive values
 //   npm run eval -- --models eu.amazon.nova-micro-v1:0,<other-id> --tags adversarial
+//   --batch 10 (emails per request, like the gateway)   --rpm 15 (stay under the account's request limit)
 //
 // Needs AWS credentials (aws login) with Bedrock access in --region (default eu-north-1).
 
@@ -26,20 +27,6 @@ function arg(name: string, fallback?: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : fallback;
 }
 
-async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      while (next < items.length) {
-        const i = next++;
-        out[i] = await fn(items[i]!);
-      }
-    }),
-  );
-  return out;
-}
-
 interface ModelAnswer {
   label: Label | null;
   error: string | null;
@@ -55,25 +42,45 @@ interface Run {
   failures: number;
 }
 
-async function runModel(model: string, prepared: Prepared[], client: BedrockRuntimeClient, concurrency: number): Promise<Run> {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const isThrottle = (e: unknown) => /throttl|too many requests|rate exceeded/i.test(e instanceof Error ? `${e.name} ${e.message}` : String(e));
+
+/** Sends batches one after another, at most `rpm` requests per minute, retrying throttled requests. */
+async function runModel(model: string, prepared: Prepared[], client: BedrockRuntimeClient, batch: number, rpm: number): Promise<Run> {
   const run: Run = { name: model, rulesOnly: false, answers: new Map(), inputTokens: 0, outputTokens: 0, failures: 0 };
-  await mapLimit(prepared, concurrency, async (p) => {
+  const gapMs = Math.ceil(60000 / rpm);
+  let lastStart = 0;
+  for (let start = 0; start < prepared.length; start += batch) {
+    const chunk = prepared.slice(start, start + batch);
     let last: CallInfo | null = null;
     const classifier = new BedrockClassifier(model, client, (info) => {
       last = info;
       run.inputTokens += info.inputTokens;
       run.outputTokens += info.outputTokens;
     });
-    try {
-      const label = await classifier.classify({ from: p.c.from, subject: p.c.subject, text: p.text });
-      run.answers.set(p.c.id, { label, error: null, latencyMs: (last as CallInfo | null)?.latencyMs ?? null });
-      process.stdout.write(".");
-    } catch (e) {
-      run.failures++;
-      run.answers.set(p.c.id, { label: null, error: e instanceof Error ? e.message : String(e), latencyMs: null });
-      process.stdout.write("x");
+    const inputs = chunk.map((p) => ({ from: p.c.from, subject: p.c.subject, text: p.text }));
+    let labels: (Label | null)[] | null = null;
+    let error = "";
+    for (let attempt = 0; attempt < 6 && !labels; attempt++) {
+      const wait = lastStart + gapMs - Date.now();
+      if (wait > 0) await sleep(wait);
+      lastStart = Date.now();
+      try {
+        labels = chunk.length > 1 ? await classifier.classifyBatch(inputs) : [await classifier.classify(inputs[0]!)];
+      } catch (e) {
+        error = e instanceof Error ? e.message : String(e);
+        if (!isThrottle(e)) break;
+        await sleep(gapMs * 2 ** attempt);
+      }
     }
-  });
+    const latency = (last as CallInfo | null)?.latencyMs ?? null;
+    chunk.forEach((p, j) => {
+      const label = labels?.[j] ?? null;
+      if (!label) run.failures++;
+      run.answers.set(p.c.id, { label, error: label ? null : error || "no answer for this email in the batch", latencyMs: latency });
+    });
+    process.stdout.write(labels ? "." : "x");
+  }
   process.stdout.write("\n");
   return run;
 }
@@ -91,7 +98,7 @@ function report(runs: Run[], prepared: Prepared[], threshold: number): string {
   const lines: string[] = [];
   lines.push(`# Share-or-withhold benchmark`, ``, `${new Date().toISOString()} · ${prepared.length} cases · category threshold ${threshold}`, ``);
   lines.push(`## Summary`, ``);
-  lines.push(`| Model | Withheld when it should (recall) | Precision | Everyday emails wrongly withheld | Category accuracy | Model failures | Latency p50 / p95 | Tokens in / out |`);
+  lines.push(`| Model | Withheld when it should (recall) | Precision | Everyday emails wrongly withheld | Category accuracy | Unanswered emails | Latency per request p50 / p95 | Tokens in / out |`);
   lines.push(`|---|---|---|---|---|---|---|---|`);
   for (const r of runs) {
     const o = outcomes(r, prepared, threshold);
@@ -168,15 +175,16 @@ async function main() {
   const models = (arg("models") ?? DEFAULT_MODELS.join(",")).split(",").filter(Boolean);
   const region = arg("region", "eu-north-1")!;
   const threshold = Number(arg("threshold", "0.6"));
-  const concurrency = Number(arg("concurrency", "4"));
+  const batch = Number(arg("batch", "10"));
+  const rpm = Number(arg("rpm", "15"));
   const client = new BedrockRuntimeClient({ region, maxAttempts: 6 });
   const prepared = cases.map(prepare);
-  console.log(`${cases.length} cases, models: ${models.join(", ")}, region ${region}`);
+  console.log(`${cases.length} cases, models: ${models.join(", ")}, region ${region}, ${batch} emails per request, ${rpm} requests/min`);
 
   const runs: Run[] = [{ name: "rules + detectors only (no model)", rulesOnly: true, answers: new Map(), inputTokens: 0, outputTokens: 0, failures: 0 }];
   for (const m of models) {
     console.log(`Running ${m}`);
-    runs.push(await runModel(m, prepared, client, concurrency));
+    runs.push(await runModel(m, prepared, client, batch, rpm));
   }
 
   const md = report(runs, prepared, threshold);

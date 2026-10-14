@@ -1,6 +1,6 @@
 // Connects the MCP tools to a mailbox, the filter engine and the audit log.
 
-import { filterNote, processEmail, type Decision, type EngineDeps } from "./filter/engine";
+import { filterNote, processEmail, processEmails, type Decision, type EngineDeps } from "./filter/engine";
 import type { Mailbox } from "./mail";
 import type { ToolBackend, ToolResult } from "./mcp";
 import { randomId } from "./crypto";
@@ -41,7 +41,8 @@ export class GatewayService implements ToolBackend {
 
   async searchEmail(query: string, maxResults: number): Promise<ToolResult> {
     const ids = await this.mailbox.search(query, maxResults);
-    const decisions = await mapLimit(ids, CONCURRENCY, async (id) => processEmail(await this.mailbox.get(id), this.deps));
+    const emails = await mapLimit(ids, CONCURRENCY, (id) => this.mailbox.get(id));
+    const decisions = await processEmails(emails, this.deps);
     await this.record("search_email", query, decisions);
     const results = decisions
       .filter((d) => d.filtered)

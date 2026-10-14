@@ -31,7 +31,8 @@ async function build() {
     dev: false, // never on Lambda
   };
   // Bedrock can run in a different region from the rest of the stack.
-  const bedrock = new BedrockRuntimeClient({ region: env.BEDROCK_REGION || env.AWS_REGION });
+  // Extra retries with backoff absorb short bursts over the per-minute request limit.
+  const bedrock = new BedrockRuntimeClient({ region: env.BEDROCK_REGION || env.AWS_REGION, maxAttempts: 5 });
   return createApp({
     config,
     accounts: new TableAccounts(new DynamoTable(required("TABLE_NAME", env.TABLE_NAME))),
