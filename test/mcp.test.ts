@@ -74,7 +74,7 @@ describe("MCP endpoint", () => {
     const ids = out.results.map((r) => r.id);
     expect(ids).not.toContain("fx-lab");
     expect(ids).not.toContain("fx-statement");
-    expect(ids).not.toContain("fx-card-receipt");
+    expect(ids).toContain("fx-card-receipt"); // shared with the card number removed
     expect(ids).toContain("fx-flight");
     expect(JSON.stringify(out)).not.toContain("4111");
     expect(out.filter_note).toMatch(/withheld/);

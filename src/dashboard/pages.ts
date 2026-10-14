@@ -130,10 +130,13 @@ function when(iso: string): string {
   return d.toISOString().replace("T", " ").slice(0, 16) + " UTC";
 }
 
+const ACTION_LABEL: Record<string, string> = { shared: "shared", redacted: "values removed", withheld: "withheld" };
+
 function runChips(r: RunRow): string {
   const c: string[] = [];
   if (r.run_type === "background_likely") c.push(`<span class="chip c-bg">background, likely</span>`);
   if (r.shared_count) c.push(`<span class="chip c-shared">${r.shared_count} shared</span>`);
+  if (r.redacted_count) c.push(`<span class="chip c-redacted">${r.redacted_count} values removed</span>`);
   if (r.withheld_count) c.push(`<span class="chip c-withheld">${r.withheld_count} withheld</span>`);
   if (!c.length) c.push(`<span class="chip">no emails</span>`);
   return c.join("");
@@ -163,10 +166,11 @@ export function activityPage(nav: Nav, totals: Totals, runs: RunRow[], gmailConn
      <div class="tiles">
        <div class="tile"><b>${totals.read}</b><span>emails your assistants read</span></div>
        <div class="tile"><b>${totals.withheld}</b><span>withheld</span></div>
-       <div class="tile"><b>${totals.read - totals.withheld}</b><span>shared</span></div>
+       <div class="tile"><b>${totals.redacted}</b><span>shared with values removed</span></div>
+       <div class="tile"><b>${totals.read - totals.withheld - totals.redacted}</b><span>shared unchanged</span></div>
        <div class="tile"><b>${totals.background}</b><span>runs that look like background tasks</span></div>
      </div>
-     ${breakdown("Withheld because", totals.byReason)}
+     ${breakdown("Withheld or removed because", totals.byReason)}
      ${breakdown("Emails read by assistant", totals.byAssistant, (k) => ASSISTANT[k] ?? k)}
      <h2>Recent requests</h2>
      ${
@@ -189,7 +193,7 @@ export function gmailLink(messageId: string, gmailAddress: string | null): strin
 export function runPage(nav: Nav, run: RunRow, items: RunItemRow[], gmailAddress: string | null): string {
   const rows = items
     .map((i) => {
-      const actionChip = `<span class="chip c-${esc(i.action)}">${esc(i.action)}</span>`;
+      const actionChip = `<span class="chip c-${esc(i.action)}">${esc(ACTION_LABEL[i.action] ?? i.action)}</span>`;
       const because = i.because ? `<div class="chips">${i.because.split(", ").map((b) => `<span class="chip">${esc(b)}</span>`).join("")}</div>` : `<span class="muted">–</span>`;
       const fb = i.feedback ? `<span class="muted">You chose: ${esc(i.feedback)}</span>` : "";
       const buttons =
@@ -229,8 +233,9 @@ export function settingsPage(nav: Nav, s: { medical: boolean; financial: boolean
        ${box("medical", s.medical, "Medical: lab results, prescriptions, clinic letters, health insurance")}
        ${box("financial", s.financial, "Financial: bank and card statements, tax documents, payslips, loans")}
        <p class="muted">An email is withheld when the classifier is at least ${(threshold * 100).toFixed(0)}% confident.
-       Emails containing card or bank account numbers, government IDs, passwords or keys, one-time codes,
-       home addresses or dates of birth are always withheld.</p>
+       In every other email, card or bank account numbers, government IDs, passwords or keys, one-time codes,
+       home addresses and dates of birth are always removed and replaced with [removed: …]. If a value can't be
+       removed reliably, the whole email is withheld.</p>
        <button class="btn primary">Save</button>
      </form>
      <form method="post" action="/account/delete" class="card">

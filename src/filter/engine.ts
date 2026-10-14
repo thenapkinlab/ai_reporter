@@ -1,5 +1,6 @@
 // Runs one email through detectors, signals and the classifier, then decides: share the
-// email unchanged, or withhold it whole. Also produces the audit record (no content).
+// email unchanged, share it with sensitive values removed, or withhold it whole (medical or
+// financial emails, or when removal can't be verified). Also produces the audit record (no content).
 
 import { detect, type Hit, DETECTOR_LABELS } from "./detectors";
 import { computeSignals, isCandidate, type Signals } from "./signals";
@@ -13,6 +14,7 @@ import {
   type Label,
   type SensitiveItem,
 } from "./classifier";
+import { redactEmail } from "./redactor";
 import { senderDomain, type Attachment, type Email } from "../mail";
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -39,7 +41,7 @@ export interface EngineDeps {
   policy: Policy;
 }
 
-export type Action = "shared" | "withheld";
+export type Action = "shared" | "redacted" | "withheld";
 
 export interface AttachmentInfo {
   filename: string;
@@ -63,10 +65,10 @@ export interface Decision {
   action: Action;
   label: Label;
   hits: Hit[];
-  /** Why it was withheld, e.g. ["financial", "bank account"]. Empty when shared. */
+  /** Why it was withheld or redacted, e.g. ["financial"] or ["home address"]. Empty when shared unchanged. */
   because: string[];
   unscannedAttachments: string[];
-  /** Present only when shared. */
+  /** Present when shared or redacted: what the assistant receives. */
   filtered?: FilteredEmail;
 }
 
@@ -100,23 +102,26 @@ export interface DecideInput {
   policy: Policy;
 }
 
+export type Verdict = "share" | "redact" | "withhold";
+
 /**
- * Withhold if any of: a withheld category (from the model or a clear rule), any sensitive item
- * the model reports, any sensitive item a pattern detector proves, or (fail closed) the model
- * was unavailable for an email with sensitive hints. A user's "release" overrides all of it.
+ * Withhold whole: a withheld category (from the model or a clear rule), or (fail closed) the
+ * model was unavailable for an email with sensitive hints. Otherwise, redact any sensitive item
+ * the model reports or a pattern detector proves. A user's "release" overrides all of it.
  */
-export function decide(i: DecideInput): string[] {
-  if (i.released) return [];
-  const because: string[] = [];
+export function decide(i: DecideInput): { verdict: Verdict; because: string[] } {
+  if (i.released) return { verdict: "share", because: [] };
   const p = i.policy;
+  const categories: string[] = [];
   for (const l of [i.label, i.rule]) {
-    if (l && l.category !== "other" && p.withhold.has(l.category) && l.confidence >= p.threshold && !because.includes(l.category))
-      because.push(l.category);
+    if (l && l.category !== "other" && p.withhold.has(l.category) && l.confidence >= p.threshold && !categories.includes(l.category))
+      categories.push(l.category);
   }
+  if (categories.length) return { verdict: "withhold", because: categories };
+  if (i.modelFailed && i.candidate) return { verdict: "withhold", because: ["unchecked (model unavailable)"] };
   const items = new Set<SensitiveItem>([...i.label.sensitive, ...i.hits.map((h) => DETECTOR_ITEM[h.type])]);
-  for (const item of items) because.push(ITEM_LABELS[item]);
-  if (i.modelFailed && i.candidate && because.length === 0) because.push("unchecked (model unavailable)");
-  return because;
+  if (items.size) return { verdict: "redact", because: [...items].map((x) => ITEM_LABELS[x]) };
+  return { verdict: "share", because: [] };
 }
 
 /** Emails per model request. Bedrock limits requests per minute far more tightly than tokens. */
@@ -126,6 +131,7 @@ interface PreparedEmail {
   email: Email;
   domain: string;
   text: string;
+  attachmentText: string;
   hits: Hit[];
   signals: Signals;
   unscannedAttachments: string[];
@@ -141,21 +147,25 @@ async function prepareEmail(email: Email, deps: EngineDeps): Promise<PreparedEma
     .join("");
   const text = `${email.subject}\n${email.body}${attachmentText}`.slice(0, MAX_TEXT_CHARS);
   const hits = [...detect(email.subject), ...detect(email.snippet), ...detect(email.body), ...scanned.flatMap((s) => s.hits)];
+  const cached = await deps.cache.get(email.id);
   return {
     email,
     domain,
     text,
+    attachmentText,
     hits,
     signals: computeSignals(domain, text, hits),
     unscannedAttachments: scanned.filter((s) => s.text === null).map((s) => s.att.filename),
-    cached: await deps.cache.get(email.id),
+    // A cached label has item types but no values, so it can't drive redaction: only labels
+    // without sensitive items are reused; the rest go back to the model.
+    cached: cached && cached.sensitive.length === 0 ? cached : null,
   };
 }
 
 function finish(pe: PreparedEmail, label: Label, modelFailed: boolean, deps: EngineDeps): Decision {
   const { email, domain, hits } = pe;
   const p = deps.policy;
-  const because = decide({
+  const { verdict, because } = decide({
     label,
     rule: ruleLabel(pe.signals),
     hits,
@@ -165,20 +175,27 @@ function finish(pe: PreparedEmail, label: Label, modelFailed: boolean, deps: Eng
     policy: p,
   });
   const base = { messageId: email.id, senderDomain: domain, label, hits, because, unscannedAttachments: pe.unscannedAttachments };
-  if (because.length) return { ...base, action: "withheld" };
-  return {
-    ...base,
-    action: "shared",
-    filtered: {
-      id: email.id,
-      from: email.from,
-      subject: email.subject,
-      date: email.date,
-      snippet: email.snippet,
-      body: email.body,
-      attachments: email.attachments.map((a) => ({ filename: a.filename, mimeType: a.mimeType, size: a.size })),
-    },
+  if (verdict === "withhold") return { ...base, action: "withheld" };
+  const filtered: FilteredEmail = {
+    id: email.id,
+    from: email.from,
+    subject: email.subject,
+    date: email.date,
+    snippet: email.snippet,
+    body: email.body,
+    attachments: email.attachments.map((a) => ({ filename: a.filename, mimeType: a.mimeType, size: a.size })),
   };
+  if (verdict === "share") return { ...base, action: "shared", filtered };
+
+  // Every item the model reported must be removable: either it gave the value, or a detector found it.
+  const values = label.values ?? [];
+  const detected = new Set(hits.map((h) => DETECTOR_ITEM[h.type]));
+  const unremovable = label.sensitive.filter((item) => !detected.has(item) && !values.some((v) => v.item === item));
+  const r = redactEmail({ subject: email.subject, body: email.body, attachmentText: pe.attachmentText, values });
+  if (unremovable.length || r.missing.length) {
+    return { ...base, because: [...because, "couldn't remove safely"], action: "withheld" };
+  }
+  return { ...base, action: "redacted", filtered: { ...filtered, subject: r.subject, body: r.body, snippet: r.snippet } };
 }
 
 /**
@@ -231,12 +248,17 @@ export async function processEmail(email: Email, deps: EngineDeps): Promise<Deci
 
 /** The note the assistant sees: counts and reasons only, never subjects or values. */
 export function filterNote(decisions: Decision[]): string {
-  const withheld = decisions.filter((d) => d.action === "withheld");
-  if (!withheld.length) return "Privacy filter: nothing was withheld.";
-  const reasons = [...new Set(withheld.flatMap((d) => d.because))].join(", ");
+  const part = (action: Action, what: string) => {
+    const ds = decisions.filter((d) => d.action === action);
+    if (!ds.length) return "";
+    const reasons = [...new Set(ds.flatMap((d) => d.because))].join(", ");
+    return `${ds.length} email${ds.length > 1 ? "s" : ""} ${what} (${reasons})`;
+  };
+  const parts = [part("redacted", "shared with sensitive values removed, shown as [removed: …]"), part("withheld", "withheld")].filter(Boolean);
+  if (!parts.length) return "Privacy filter: nothing was removed or withheld.";
   return (
-    `Privacy filter: ${withheld.length} email${withheld.length > 1 ? "s" : ""} withheld by the user's privacy settings ` +
-    `(${reasons}). Tell the user if this affects your answer; they can review it on their dashboard.`
+    `Privacy filter, by the user's privacy settings: ${parts.join("; ")}. ` +
+    `Don't guess removed values. Tell the user if this affects your answer; they can review it on their dashboard.`
   );
 }
 

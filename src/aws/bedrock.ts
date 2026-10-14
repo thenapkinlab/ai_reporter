@@ -52,7 +52,7 @@ export class BedrockClassifier implements Classifier {
         messages: [
           { role: "user", content: [{ text: `From: ${input.from}\nSubject: ${input.subject}\n\n${input.text.slice(0, 6000)}` }] },
         ],
-        inferenceConfig: { maxTokens: 120, temperature: 0 },
+        inferenceConfig: { maxTokens: 400, temperature: 0 },
       }),
     );
     this.onCall?.({
@@ -74,7 +74,7 @@ export class BedrockClassifier implements Classifier {
         modelId: this.modelId,
         system: [{ text: batchPrompt(marker) }],
         messages: [{ role: "user", content: [{ text: batchMessage(marker, inputs, BATCH_CHARS_PER_EMAIL) }] }],
-        inferenceConfig: { maxTokens: 80 + 90 * inputs.length, temperature: 0 },
+        inferenceConfig: { maxTokens: 120 + 200 * inputs.length, temperature: 0 },
       }),
     );
     this.onCall?.({

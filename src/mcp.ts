@@ -23,9 +23,9 @@ export const TOOLS = [
     title: "Search email",
     description:
       "Search the user's Gmail. Use this for any email task. Accepts Gmail search syntax " +
-      "(e.g. 'from:airline newer_than:30d'). A privacy filter withholds whole emails that are medical or " +
-      "financial or contain sensitive items (card or bank numbers, IDs, passwords, codes, home addresses, birth " +
-      "dates); filter_note gives the count and reason types. Attachment contents are never returned.",
+      "(e.g. 'from:airline newer_than:30d'). A privacy filter withholds medical and financial emails, and " +
+      "replaces sensitive values in other emails (card or bank numbers, IDs, passwords, codes, home addresses, " +
+      "birth dates) with [removed: …]; filter_note gives counts and reason types. Attachment contents are never returned.",
     inputSchema: {
       type: "object",
       properties: {
@@ -41,8 +41,8 @@ export const TOOLS = [
     name: "read_email",
     title: "Read email",
     description:
-      "Read one email by ID (from search_email). Returns the email unchanged if the privacy filter allows it, " +
-      "with attachment names, types and sizes only (attachment contents are never returned). " +
+      "Read one email by ID (from search_email). Returns the email with any sensitive values replaced by " +
+      "[removed: …], and attachment names, types and sizes only (attachment contents are never returned). " +
       "Withheld emails return a notice instead of content.",
     inputSchema: {
       type: "object",

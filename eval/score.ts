@@ -3,7 +3,7 @@
 import { detect, type DetectorType, type Hit } from "../src/filter/detectors";
 import { computeSignals, isCandidate, type Signals } from "../src/filter/signals";
 import { fallbackLabel, ruleLabel, type Category, type Label } from "../src/filter/classifier";
-import { decide, type Policy } from "../src/filter/engine";
+import { decide, type Policy, type Verdict } from "../src/filter/engine";
 import { senderDomain } from "../src/mail";
 
 export interface EvalCase {
@@ -49,11 +49,13 @@ export interface Outcome {
   id: string;
   tags: string[];
   expected: Category;
-  /** Ground truth: should the gateway withhold this email? */
+  /** Ground truth: should the gateway act on this email (withhold it, or redact its sensitive values)? */
   expectWithhold: boolean;
   /** The label the pipeline used (model, or fallback if the model failed / rules-only). */
   label: Label;
+  /** Not shared unchanged: withheld whole, or (for sensitive items) redacted. Positive class of the benchmark. */
   withheld: boolean;
+  verdict: Verdict;
   because: string[];
   model: Label | null;
   modelError: string | null;
@@ -76,7 +78,7 @@ export const DEFAULT_POLICY: Policy = {
 export function outcomeFor(p: Prepared, model: Label | null, modelError: string | null, latencyMs: number | null, threshold: number, rulesOnly = false): Outcome {
   const modelFailed = !rulesOnly && !model;
   const label = model ?? p.rule ?? fallbackLabel(p.signals);
-  const because = decide({
+  const { verdict, because } = decide({
     label,
     rule: p.rule,
     hits: p.hits,
@@ -91,7 +93,8 @@ export function outcomeFor(p: Prepared, model: Label | null, modelError: string 
     expected: p.c.expected,
     expectWithhold: expectWithhold(p.c),
     label,
-    withheld: because.length > 0,
+    withheld: verdict !== "share",
+    verdict,
     because,
     model,
     modelError,

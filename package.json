@@ -11,7 +11,8 @@
     "destroy": "cdk destroy",
     "eval": "tsx eval/run.ts",
     "eval:import": "tsx eval/import.ts",
-    "eval:redaction": "tsx eval/redaction.ts"
+    "eval:redaction": "tsx eval/redaction.ts",
+    "eval:redactor": "tsx eval/redactor.ts"
   },
   "type": "module",
   "dependencies": {

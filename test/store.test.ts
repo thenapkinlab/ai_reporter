@@ -15,14 +15,14 @@ const meta = (query: string): RunMeta => ({
 });
 
 function decision(id: string, action: Decision["action"], category: "medical" | "financial" | "other" = "other"): Decision {
-  const card = category === "other" && action === "withheld";
+  const card = category === "other" && action !== "shared";
   return {
     messageId: id,
     senderDomain: "example.com",
     action,
     label: { category, confidence: 0.9, sensitive: [], reason: "test", source: "rules" },
     hits: card ? [{ type: "card_number", start: 0, end: 4, masked: "••••1111" }] : [],
-    because: action === "withheld" ? [card ? "card number" : category] : [],
+    because: action !== "shared" ? [card ? "card number" : category] : [],
     unscannedAttachments: [],
   };
 }
@@ -48,14 +48,16 @@ describe("single-table store", () => {
     const t1 = new Date("2026-10-07T07:00:00Z");
     const t2 = new Date("2026-10-07T09:30:00Z");
     await store.recordRun(newRunId(t1, "a"), meta("bank"), [decision("m1", "withheld", "financial"), decision("m2", "shared")], t1);
-    await store.recordRun(newRunId(t2, "b"), meta("flights"), [decision("m3", "withheld")], t2);
+    await store.recordRun(newRunId(t2, "b"), meta("flights"), [decision("m3", "shared"), decision("m4", "redacted")], t2);
 
     const runs = await store.recentRuns();
     expect(runs.map((r) => r.query)).toEqual(["flights", "bank"]);
-    expect(await store.totals(7, new Date("2026-10-07T10:00:00Z"))).toMatchObject({ read: 3, withheld: 2, background: 0, byReason: { financial: 1, "card number": 1 }, byAssistant: { claude: 3 } });
+    expect(runs[0]).toMatchObject({ shared_count: 1, redacted_count: 1, withheld_count: 0 });
+    expect(await store.totals(7, new Date("2026-10-07T10:00:00Z"))).toMatchObject({ read: 4, redacted: 1, withheld: 1, background: 0, byReason: { financial: 1, "card number": 1 }, byAssistant: { claude: 4 } });
 
     const detail = await store.run(runs[1]!.id);
     expect(detail?.items.map((i) => i.action)).toEqual(["withheld", "shared"]);
+    expect((await store.run(runs[0]!.id))?.items.map((i) => i.action)).toEqual(["redacted", "shared"]);
   });
 
   it("keeps users apart", async () => {

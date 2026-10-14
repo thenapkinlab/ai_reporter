@@ -48,10 +48,13 @@ function toRunRow(it: Item): RunRow {
     query: (it.query as string | null) ?? null,
     run_type: it.runType as RunRow["run_type"],
     shared_count: Number(it.shared ?? 0),
+    redacted_count: Number(it.redacted ?? 0),
     withheld_count: Number(it.withheld ?? 0),
     created_at: String(it.createdAt),
   };
 }
+
+const ORDER: Record<RunItemRow["action"], number> = { withheld: 0, redacted: 1, shared: 2 };
 
 class TableUserStore implements UserStore {
   private pk: string;
@@ -141,6 +144,7 @@ class TableUserStore implements UserStore {
       query: meta.query,
       runType: inferRunType(meta.query, prior, now),
       shared: count("shared"),
+      redacted: count("redacted"),
       withheld: count("withheld"),
       reasons,
       createdAt: now.toISOString(),
@@ -171,25 +175,26 @@ class TableUserStore implements UserStore {
     const items: RunItemRow[] = rows
       .map((i) => ({
         message_id: String(i.messageId),
-        action: (i.action === "withheld" ? "withheld" : "shared") as RunItemRow["action"],
+        action: (i.action === "withheld" || i.action === "redacted" ? i.action : "shared") as RunItemRow["action"],
         because: (i.because as string) || null,
         feedback: feedback.get(String(i.messageId)) ?? null,
       }))
-      .sort((a, b) => (a.action === b.action ? 0 : a.action === "withheld" ? -1 : 1));
+      .sort((a, b) => ORDER[a.action] - ORDER[b.action]);
     return { run: toRunRow(r), items };
   }
 
   async totals(days = 7, now = new Date()): Promise<Totals> {
     const since = new Date(now.getTime() - days * 86400000);
     const rows = await this.table.query(this.pk, { from: `RUN#${msKey(since)}`, to: "RUN#~" });
-    const t: Totals = { read: 0, withheld: 0, background: 0, byReason: {}, byAssistant: {} };
+    const t: Totals = { read: 0, redacted: 0, withheld: 0, background: 0, byReason: {}, byAssistant: {} };
     for (const r of rows) {
-      const shared = Number(r.shared ?? 0), withheld = Number(r.withheld ?? 0);
-      t.read += shared + withheld;
+      const shared = Number(r.shared ?? 0), redacted = Number(r.redacted ?? 0), withheld = Number(r.withheld ?? 0);
+      t.read += shared + redacted + withheld;
+      t.redacted += redacted;
       t.withheld += withheld;
       if (r.runType === "background_likely") t.background++;
       const a = String(r.assistant ?? "unknown");
-      t.byAssistant[a] = (t.byAssistant[a] ?? 0) + shared + withheld;
+      t.byAssistant[a] = (t.byAssistant[a] ?? 0) + shared + redacted + withheld;
       for (const [k, v] of Object.entries((r.reasons as Record<string, number>) ?? {})) t.byReason[k] = (t.byReason[k] ?? 0) + Number(v);
     }
     return t;

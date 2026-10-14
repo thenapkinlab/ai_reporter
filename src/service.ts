@@ -48,7 +48,10 @@ export class GatewayService implements ToolBackend {
       .filter((d) => d.filtered)
       .map((d) => {
         const f = d.filtered!;
-        return { id: f.id, from: f.from, subject: f.subject, date: f.date, snippet: f.snippet, attachments: f.attachments.length };
+        return {
+          id: f.id, from: f.from, subject: f.subject, date: f.date, snippet: f.snippet, attachments: f.attachments.length,
+          ...(d.action === "redacted" ? { values_removed: d.because } : {}),
+        };
       });
     return result({ results, filter_note: filterNote(decisions) });
   }
@@ -60,10 +63,11 @@ export class GatewayService implements ToolBackend {
       return result({
         id: messageId,
         withheld: true,
-        notice: `This email was withheld by the user's privacy settings (${decision.label.category}).`,
+        notice: `This email was withheld by the user's privacy settings (${decision.because.join(", ")}).`,
         filter_note: filterNote([decision]),
       });
     }
-    return result({ ...decision.filtered, filter_note: filterNote([decision]) });
+    const removed = decision.action === "redacted" ? { values_removed: decision.because } : {};
+    return result({ ...decision.filtered, ...removed, filter_note: filterNote([decision]) });
   }
 }

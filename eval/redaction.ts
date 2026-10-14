@@ -43,7 +43,7 @@ for (const c of cases) {
     tally(perLabel, r.label, found, example);
     tally(perLang, lang, found, example);
   }
-  for (const g of c.gaps) gaps.set(g, (gaps.get(g) ?? 0) + 1);
+  for (const g of c.gaps) gaps.set(g.label, (gaps.get(g.label) ?? 0) + 1);
 }
 
 const pct = (a: number, b: number) => (b ? `${((a / b) * 100).toFixed(1)}%` : "–");

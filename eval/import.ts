@@ -211,8 +211,8 @@ export interface RedactionCase {
   text: string;
   /** Labelled values the detectors should find (checksum-valid where a checksum exists). */
   required: { item: SensitiveItem; label: string; value: string }[];
-  /** Labelled values not scored here, by Gretel label (see NOT_CHECKED). */
-  gaps: string[];
+  /** Labelled values the detectors don't score (see NOT_CHECKED); the redactor benchmark uses the addresses. */
+  gaps: { label: string; value: string }[];
 }
 
 function toRedactionCase(id: string, r: Gr, tag: string): RedactionCase | null {
@@ -223,7 +223,7 @@ function toRedactionCase(id: string, r: Gr, tag: string): RedactionCase | null {
     return null;
   }
   const required: RedactionCase["required"] = [];
-  const gaps: string[] = [];
+  const gaps: RedactionCase["gaps"] = [];
   for (const s of spans) {
     const value = r.generated_text.slice(s.start, s.end);
     const item = PII_ITEM[s.label];
@@ -233,7 +233,7 @@ function toRedactionCase(id: string, r: Gr, tag: string): RedactionCase | null {
       if (s.label === "credit_card_number" && !(digits.length >= 13 && luhn(digits))) continue;
       if (s.label === "iban" && !ibanValid(value.replace(/\s/g, "").toUpperCase())) continue;
       required.push({ item, label: s.label, value });
-    } else if (NOT_CHECKED.includes(s.label)) gaps.push(s.label);
+    } else if (NOT_CHECKED.includes(s.label)) gaps.push({ label: s.label, value });
   }
   if (!required.length && !gaps.length) return null;
   return { id, tags: ["source:gretel", tag], text: r.generated_text, required, gaps };

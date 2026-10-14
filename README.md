@@ -1,9 +1,9 @@
 # Private Gmail gateway
 
 A remote MCP server that sits between AI assistants (Claude, ChatGPT) and a user's Gmail.
-It withholds medical and financial emails, redacts sensitive values (card numbers, ID numbers,
-API keys, passwords, one-time codes), and shows each user what their assistant read on a
-per-user dashboard.
+It withholds medical and financial emails, removes sensitive values from every other email
+(card and bank numbers, ID numbers, passwords and keys, one-time codes, home addresses, dates of
+birth), and shows each user what their assistant read on a per-user dashboard.
 
 Runs on AWS: Lambda (Function URL), DynamoDB, KMS, Bedrock, SSM Parameter Store, deployed with
 the AWS CDK. Sign-in is WorkOS AuthKit.
@@ -15,7 +15,7 @@ Design doc: https://claude.ai/artifact/ANNBxu1zW94YqFW6ThmRMX
 ```
 Claude / ChatGPT ──MCP + AuthKit token──► Lambda Function URL /mcp ──► Gmail API (read-only)
                                                 │
-                     detectors + batched classifier (Bedrock) → share or withhold
+          detectors + batched classifier (Bedrock) → share, remove values, or withhold
                                                 │
                      shared emails + filter note ◄── audit log in DynamoDB (no content)
 ```
@@ -23,21 +23,28 @@ Claude / ChatGPT ──MCP + AuthKit token──► Lambda Function URL /mcp ─
 - **Tools:** `search_email(query, max_results)` and `read_email(message_id)`, both read-only with explicit annotations.
 - **Scope:** only the emails the assistant asks for are fetched and checked (at most 25 per search). The inbox is
   never scanned in the background.
-- **Decision:** each email is shared unchanged or withheld whole. It is withheld if it is medical or financial, or
-  contains a card number, bank account, government ID, password or key, one-time code, home address or date of
-  birth. Pattern detectors and one batched model call decide together; either one is enough. Detectors use
-  checksums where a format has one (cards, IBANs, Aadhaar, personnummer) and otherwise only fire right after a
-  label ("Passwort:", "date of birth", "routing number") in English, German, French, Spanish, Italian, Dutch and
-  Swedish. Unlabelled values (CSV columns, EDI or SWIFT fields) are left to the model.
-  If the model is unavailable, emails with sensitive hints are withheld.
+- **Decision:** each email is shared unchanged, shared with values removed, or withheld whole.
+  - **Withheld whole:** medical or financial emails (removing values from a lab result still leaves a lab result).
+  - **Values removed:** in every other email, card numbers, bank accounts, government IDs, passwords and keys,
+    one-time codes, home addresses (including shipping and billing addresses) and dates of birth are replaced with
+    `[removed: home address]` and similar markers. Order numbers, flight details, prices, masked cards ("Visa
+    ending 4242") and shop, venue, hotel or airport addresses stay, so shopping and travel emails remain useful.
+  - **How values are found:** pattern detectors and the model together. Detectors use checksums where a format
+    has one (cards, IBANs, Aadhaar, personnummer) and otherwise only fire right after a label ("Passwort:",
+    "date of birth", "routing number") in English, German, French, Spanish, Italian, Dutch and Swedish. The model
+    copies the exact text of each value it finds; the gateway locates that text in the email itself and replaces
+    it, so the model never rewrites the email.
+  - **Fail closed:** if the model reports a value but the gateway can't find it in the email, or the model is
+    unavailable for an email with sensitive hints, the whole email is withheld.
 
 ## What the assistant receives, and what it never receives
 
 | The assistant receives | The assistant never receives |
 |---|---|
-| Shared emails: sender, subject, date, snippet, body, unchanged | **Withheld emails**: no subject, sender, snippet or body, only a count |
+| Shared emails: sender, subject, date, snippet, body | **Withheld emails**: no subject, sender, snippet or body, only a count |
+| In those emails, `[removed: …]` markers where sensitive values were, and a `values_removed` list of the types | The sensitive **values** themselves (the snippet is rebuilt from the redacted body, so it can't leak half a value) |
 | For shared emails: each attachment's **file name, type and size** | **Attachment contents**, for any email, shared or withheld |
-| A `filter_note` with the number of withheld emails and the reason **types** (e.g. "medical, bank account") | The sensitive **values** themselves, or which withheld email had which reason |
+| A `filter_note` with counts and the reason **types** (e.g. "medical", "home address") | Which withheld email had which reason |
 | For `read_email` on a withheld email: a notice that it was withheld | Anything from emails it didn't ask for |
 
 Attachments are read inside the gateway only to make the decision: PDFs and images are transcribed by a Bedrock
@@ -49,11 +56,11 @@ model, text files are read directly. The extracted text is used during the reque
 |---|---|---|
 | Request | Time, assistant, tool, the assistant's query, counts, counts of withhold reasons | 90 days |
 | Per email | Gmail message ID (for "Open in Gmail"), decision, reason types | 7 days |
-| Classifier cache | Keyed by a secret-keyed hash (HMAC) of the message ID, not the ID itself; category, confidence, sensitive-item types | 7 days |
+| Classifier cache | Keyed by a secret-keyed hash (HMAC) of the message ID, not the ID itself; category, confidence. Only labels with no sensitive items are cached; emails with values to remove go back to the model each time, because the values themselves are never stored | 7 days |
 | Gmail connection | Gmail address, refresh token encrypted with KMS (user ID as encryption context) | Until disconnected |
 
-Never stored: email bodies, subjects, senders, snippets, attachments or their text, sensitive values, or the
-model's written reasons.
+Never stored or logged: email bodies, subjects, senders, snippets, attachments or their text, sensitive values
+(the model's copies are held in memory for the request only), or the model's written reasons.
 
 ## Code layout
 
@@ -111,6 +118,33 @@ The report (`eval/results/<timestamp>.md`) shows, per model (positive = should b
 
 plus a threshold sweep (recall and FPR), accuracy by case type, the confusion matrix, and every false negative
 and false positive. The prompt version is stamped on each report.
+
+## Evaluate the redactor
+
+`eval/redaction-set.json` holds 57 hand-written shopping, travel, account and membership emails in 7 languages.
+Each case lists the values that must be removed, the facts the assistant still needs (`keep`), strings that must
+not be removed (`notSensitive`: shop, venue and airport addresses, order numbers, masked cards) and, for most, a
+question with its expected answer.
+
+```bash
+npm run eval:redactor                                    # detectors-only baseline + Haiku 4.5
+npm run eval:redactor -- --qa --gretel 200               # + end-to-end answers + 200 public documents
+npm run eval:redactor -- --models <id>,<id>
+```
+
+| Metric | Meaning |
+|---|---|
+| Value recall | sensitive values that did not reach the assistant; a partial leak (street name left) is a miss |
+| Recall when sent | the same, counting only emails that were shared or redacted (withholding can't inflate it) |
+| Usable | emails that should reach the assistant (redacted or unchanged) and weren't withheld |
+| Over-redaction | must-stay strings that were removed |
+| Facts kept | facts the assistant needs that are still present |
+| Integrity | output equals the original apart from `[removed: …]` markers |
+| Answer accuracy | a model answers each case's question from the original email and from what the assistant receives |
+
+With `--gretel`, Gretel's labelled values (IDs, card and bank numbers, credentials, dates of birth, street
+addresses) give value recall per label on public documents. Gretel labels business addresses too, so address
+recall there is an upper bound.
 
 ### Public datasets
 
