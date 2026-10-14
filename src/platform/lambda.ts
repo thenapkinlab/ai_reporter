@@ -35,7 +35,7 @@ async function build() {
   const bedrock = new BedrockRuntimeClient({ region: env.BEDROCK_REGION || env.AWS_REGION, maxAttempts: 5 });
   return createApp({
     config,
-    accounts: new TableAccounts(new DynamoTable(required("TABLE_NAME", env.TABLE_NAME))),
+    accounts: new TableAccounts(new DynamoTable(required("TABLE_NAME", env.TABLE_NAME)), config.sessionSecret),
     cipher: new KmsCipher(required("KMS_KEY_ID", env.KMS_KEY_ID)),
     classifier: new BedrockClassifier(required("CLASSIFIER_MODEL", env.CLASSIFIER_MODEL), bedrock),
     extractText: bedrockExtractor(required("EXTRACTOR_MODEL", env.EXTRACTOR_MODEL), bedrock),

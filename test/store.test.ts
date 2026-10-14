@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TableAccounts } from "../src/store/single-table";
 import { MemoryTable } from "../src/store/table";
+import { randomKeyB64 } from "../src/crypto";
 import { inferRunType, newRunId, type RunMeta } from "../src/store/types";
 import type { Decision } from "../src/filter/engine";
 
@@ -26,9 +27,23 @@ function decision(id: string, action: Decision["action"], category: "medical" | 
   };
 }
 
+const KEY = randomKeyB64();
+
 describe("single-table store", () => {
+  it("keys the classifier cache by a hash, never the raw message ID", async () => {
+    const table = new MemoryTable();
+    const cache = new TableAccounts(table, KEY).forUser("u1").labelCache();
+    await cache.put("msg-123", { category: "medical", confidence: 0.9, sensitive: [], reason: "secret reason", source: "model" });
+    const rows = await table.query("USER#u1", { prefix: "LABEL#" });
+    expect(rows).toHaveLength(1);
+    expect(JSON.stringify(rows)).not.toContain("msg-123");
+    expect(JSON.stringify(rows)).not.toContain("secret reason");
+    expect((await cache.get("msg-123"))?.category).toBe("medical");
+    expect(await new TableAccounts(table, randomKeyB64()).forUser("u1").labelCache().get("msg-123")).toBeNull();
+  });
+
   it("records runs, lists them newest first, and totals them", async () => {
-    const accounts = new TableAccounts(new MemoryTable());
+    const accounts = new TableAccounts(new MemoryTable(), KEY);
     const store = accounts.forUser("u1");
     const t1 = new Date("2026-10-07T07:00:00Z");
     const t2 = new Date("2026-10-07T09:30:00Z");
@@ -44,7 +59,7 @@ describe("single-table store", () => {
   });
 
   it("keeps users apart", async () => {
-    const accounts = new TableAccounts(new MemoryTable());
+    const accounts = new TableAccounts(new MemoryTable(), KEY);
     const now = new Date();
     const runId = newRunId(now, "x");
     await accounts.forUser("alice").recordRun(runId, meta("q"), [decision("m1", "shared")], now);
@@ -53,7 +68,7 @@ describe("single-table store", () => {
   });
 
   it("marks a repeat at an hourly rhythm as background", async () => {
-    const accounts = new TableAccounts(new MemoryTable());
+    const accounts = new TableAccounts(new MemoryTable(), KEY);
     const store = accounts.forUser("u1");
     const t1 = new Date("2026-10-06T07:00:00Z");
     const t2 = new Date("2026-10-07T07:02:00Z");
@@ -64,7 +79,7 @@ describe("single-table store", () => {
   });
 
   it("turns a release into a policy exception, and keep undoes it", async () => {
-    const store = new TableAccounts(new MemoryTable()).forUser("u1");
+    const store = new TableAccounts(new MemoryTable(), KEY).forUser("u1");
     await store.feedback("m1", "release");
     expect((await store.policy(0.6)).releasedMessages.has("m1")).toBe(true);
     await store.feedback("m1", "keep");
@@ -73,7 +88,7 @@ describe("single-table store", () => {
 
   it("saves settings and deletes everything for a user", async () => {
     const table = new MemoryTable();
-    const accounts = new TableAccounts(table);
+    const accounts = new TableAccounts(table, KEY);
     await accounts.upsertUser("u1", "a@example.com");
     await accounts.saveGmail("u1", "a@gmail.com", "cipher", "scope");
     const store = accounts.forUser("u1");

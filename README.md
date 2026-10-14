@@ -46,7 +46,7 @@ model, text files are read directly. The extracted text is used during the reque
 |---|---|---|
 | Request | Time, assistant, tool, the assistant's query, counts, counts of withhold reasons | 90 days |
 | Per email | Gmail message ID (for "Open in Gmail"), decision, reason types | 7 days |
-| Classifier cache | Gmail message ID, category, confidence, sensitive-item types | 7 days |
+| Classifier cache | Keyed by a secret-keyed hash (HMAC) of the message ID, not the ID itself; category, confidence, sensitive-item types | 7 days |
 | Gmail connection | Gmail address, refresh token encrypted with KMS (user ID as encryption context) | Until disconnected |
 
 Never stored: email bodies, subjects, senders, snippets, attachments or their text, sensitive values, or the

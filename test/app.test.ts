@@ -23,7 +23,7 @@ function devApp(dev = true) {
       withholdThreshold: 0.6,
       dev,
     },
-    accounts: new TableAccounts(new MemoryTable()),
+    accounts: new TableAccounts(new MemoryTable(), randomKeyB64()),
     cipher: new LocalCipher(randomKeyB64()),
     classifier: null,
     extractText: async () => null,

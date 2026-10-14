@@ -97,6 +97,15 @@ export async function verifyPayload<T>(token: string, secretB64: string): Promis
   }
 }
 
+/**
+ * Keyed one-way hash (HMAC-SHA256), base64url, truncated to 32 chars. Used so the classifier cache
+ * can't be matched to Gmail message IDs without the secret. `purpose` separates uses of one secret.
+ */
+export async function keyedHash(value: string, secretB64: string, purpose: string): Promise<string> {
+  const sig = await crypto.subtle.sign("HMAC", await hmacKey(secretB64), enc.encode(`${purpose}:${value}`));
+  return b64url(new Uint8Array(sig)).slice(0, 32);
+}
+
 export function randomId(prefix = ""): string {
   return prefix + b64url(crypto.getRandomValues(new Uint8Array(12)));
 }

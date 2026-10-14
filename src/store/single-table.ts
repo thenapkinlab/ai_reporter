@@ -8,7 +8,9 @@
 //   USER#<uid>    SETTINGS                        withhold medical / financial
 //   USER#<uid>    RUN#<runId>                     one assistant tool call (runId sorts by time)
 //   USER#<uid>    ITEM#<runId>#<messageId>        one email touched by that call: ID + decision only
-//   USER#<uid>    LABEL#<messageId>               cached classifier result: category + item types only
+//   USER#<uid>    LABEL#<hash of messageId>       cached classifier result: category + item types only.
+//                                                 The key is an HMAC of the message ID, so the cache can't
+//                                                 be matched to an email without the secret.
 //   USER#<uid>    RELEASE#message#<messageId>     user chose "Release next time"
 //   USER#<uid>    FEEDBACK#<messageId>            release | keep
 //
@@ -19,6 +21,7 @@
 import type { Category, Label } from "../filter/classifier";
 import type { Decision, LabelCache, Policy } from "../filter/engine";
 import type { Item, Table } from "./table";
+import { keyedHash } from "../crypto";
 import {
   inferRunType,
   type Accounts,
@@ -56,8 +59,13 @@ class TableUserStore implements UserStore {
   constructor(
     private table: Table,
     readonly userId: string,
+    private cacheSecret: string,
   ) {
     this.pk = pkFor(userId);
+  }
+
+  private labelKey(messageId: string): Promise<string> {
+    return keyedHash(`${this.userId}:${messageId}`, this.cacheSecret, "label-cache").then((h) => `LABEL#${h}`);
   }
 
   async policy(threshold: number): Promise<Policy> {
@@ -86,7 +94,7 @@ class TableUserStore implements UserStore {
   labelCache(): LabelCache {
     return {
       get: async (messageId) => {
-        const r = await this.table.get({ pk: this.pk, sk: `LABEL#${messageId}` });
+        const r = await this.table.get({ pk: this.pk, sk: await this.labelKey(messageId) });
         return r
           ? {
               category: r.category as Category,
@@ -101,7 +109,7 @@ class TableUserStore implements UserStore {
         // The model's free-text reason is not stored.
         await this.table.put({
           pk: this.pk,
-          sk: `LABEL#${messageId}`,
+          sk: await this.labelKey(messageId),
           category: label.category,
           confidence: label.confidence,
           sensitive: label.sensitive,
@@ -201,10 +209,14 @@ class TableUserStore implements UserStore {
 }
 
 export class TableAccounts implements Accounts {
-  constructor(private table: Table) {}
+  /** `cacheSecret`: base64 secret for hashing classifier-cache keys. */
+  constructor(
+    private table: Table,
+    private cacheSecret: string,
+  ) {}
 
   forUser(userId: string): UserStore {
-    return new TableUserStore(this.table, userId);
+    return new TableUserStore(this.table, userId, this.cacheSecret);
   }
 
   async upsertUser(id: string, email: string) {
