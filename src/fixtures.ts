@@ -103,12 +103,4 @@ export class FixtureMailbox implements Mailbox {
     return e;
   }
 
-  async headers(ids: string[]): Promise<Record<string, { subject: string; from: string }>> {
-    const out: Record<string, { subject: string; from: string }> = {};
-    for (const id of ids) {
-      const e = this.emails.find((x) => x.id === id);
-      out[id] = e ? { subject: e.subject, from: e.from } : { subject: "(no longer available)", from: "" };
-    }
-    return out;
-  }
 }

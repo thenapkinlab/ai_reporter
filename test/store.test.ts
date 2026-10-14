@@ -37,7 +37,7 @@ describe("single-table store", () => {
 
     const runs = await store.recentRuns();
     expect(runs.map((r) => r.query)).toEqual(["flights", "bank"]);
-    expect(await store.totals(7, new Date("2026-10-07T10:00:00Z"))).toEqual({ read: 3, withheld: 2, redacted: 0, background: 0 });
+    expect(await store.totals(7, new Date("2026-10-07T10:00:00Z"))).toMatchObject({ read: 3, withheld: 2, background: 0, byReason: { financial: 1, "card number": 1 }, byAssistant: { claude: 3 } });
 
     const detail = await store.run(runs[1]!.id);
     expect(detail?.items.map((i) => i.action)).toEqual(["withheld", "shared"]);

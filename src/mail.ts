@@ -22,8 +22,6 @@ export interface Mailbox {
   /** Returns message IDs matching a Gmail search query, newest first. */
   search(query: string, max: number): Promise<string[]>;
   get(id: string): Promise<Email>;
-  /** Live subject and sender lookup for the dashboard (nothing is stored). */
-  headers(ids: string[]): Promise<Record<string, { subject: string; from: string }>>;
 }
 
 export function senderDomain(from: string): string {

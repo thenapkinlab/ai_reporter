@@ -134,66 +134,63 @@ function runChips(r: RunRow): string {
   const c: string[] = [];
   if (r.run_type === "background_likely") c.push(`<span class="chip c-bg">background, likely</span>`);
   if (r.shared_count) c.push(`<span class="chip c-shared">${r.shared_count} shared</span>`);
-  if (r.redacted_count) c.push(`<span class="chip c-redacted">${r.redacted_count} redacted</span>`);
   if (r.withheld_count) c.push(`<span class="chip c-withheld">${r.withheld_count} withheld</span>`);
   if (!c.length) c.push(`<span class="chip">no emails</span>`);
   return c.join("");
 }
 
-export function activityPage(
-  nav: Nav,
-  totals: Totals,
-  runs: RunRow[],
-  gmailConnected: boolean,
-): string {
+function breakdown(title: string, counts: Record<string, number>, label: (k: string) => string = (k) => k): string {
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return "";
+  return `<div class="card"><b>${esc(title)}</b><div class="chips" style="margin-top:8px">${entries
+    .map(([k, v]) => `<span class="chip">${esc(label(k))} · ${v}</span>`)
+    .join("")}</div></div>`;
+}
+
+export function activityPage(nav: Nav, totals: Totals, runs: RunRow[], gmailConnected: boolean): string {
   const rows = runs
     .map(
       (r) => `<tr><td>${esc(when(r.created_at))}</td><td>${esc(ASSISTANT[r.assistant] ?? r.assistant)}<br><span class="muted">${esc(r.tool)}</span></td>
         <td>${esc(r.query ?? "")}</td><td><div class="chips">${runChips(r)}</div></td>
-        <td><a href="/runs/${encodeURIComponent(r.id)}">Details</a></td></tr>`,
+        <td><a href="/runs/${encodeURIComponent(r.id)}">Emails</a></td></tr>`,
     )
     .join("");
   return layout(
     "Activity",
     `<h1>Activity</h1>
      ${gmailConnected ? "" : `<div class="notice">Gmail isn't connected yet. <a href="/setup">Finish setup</a>.</div>`}
+     <p class="muted">Last 7 days</p>
      <div class="tiles">
-       <div class="tile"><b>${totals.read}</b><span>emails your assistants read, last 7 days</span></div>
+       <div class="tile"><b>${totals.read}</b><span>emails your assistants read</span></div>
        <div class="tile"><b>${totals.withheld}</b><span>withheld</span></div>
        <div class="tile"><b>${totals.read - totals.withheld}</b><span>shared</span></div>
        <div class="tile"><b>${totals.background}</b><span>runs that look like background tasks</span></div>
      </div>
+     ${breakdown("Withheld because", totals.byReason)}
+     ${breakdown("Emails read by assistant", totals.byAssistant, (k) => ASSISTANT[k] ?? k)}
+     <h2>Recent requests</h2>
      ${
        runs.length
          ? `<div class="scroll"><table><thead><tr><th>When</th><th>Assistant</th><th>Asked for</th><th>Result</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
          : `<div class="card">No activity yet. Ask Claude or ChatGPT about your email after connecting it.</div>`
-     }`,
+     }
+     <p class="muted">We keep each request (assistant, what it asked for, counts) for 90 days, and which emails it touched for 7 days.
+     We never store email content, subjects or senders.</p>`,
     nav,
   );
 }
 
-function hints(raw: string | null): string {
-  try {
-    const list = JSON.parse(raw ?? "[]") as string[];
-    return list.map((h) => `<span class="chip">${esc(h)}</span>`).join(" ");
-  } catch {
-    return "";
-  }
+/** Opens the message in the user's own Gmail. Our server never reads its subject or content for this. */
+export function gmailLink(messageId: string, gmailAddress: string | null): string {
+  const account = gmailAddress ? `?authuser=${encodeURIComponent(gmailAddress)}` : "";
+  return `https://mail.google.com/mail/u/${account}#all/${encodeURIComponent(messageId)}`;
 }
 
-export function runPage(
-  nav: Nav,
-  run: RunRow,
-  items: RunItemRow[],
-  headers: Record<string, { subject: string; from: string }>,
-): string {
+export function runPage(nav: Nav, run: RunRow, items: RunItemRow[], gmailAddress: string | null): string {
   const rows = items
     .map((i) => {
-      const h = headers[i.message_id];
       const actionChip = `<span class="chip c-${esc(i.action)}">${esc(i.action)}</span>`;
-      const label =
-        i.category === "other" ? "" : `<span class="chip">${esc(i.category)} ${(i.confidence * 100).toFixed(0)}%</span>`;
-      const att = i.because ? `<span class="chip">withheld: ${esc(i.because)}</span>` : "";
+      const because = i.because ? `<div class="chips">${i.because.split(", ").map((b) => `<span class="chip">${esc(b)}</span>`).join("")}</div>` : `<span class="muted">–</span>`;
       const fb = i.feedback ? `<span class="muted">You chose: ${esc(i.feedback)}</span>` : "";
       const buttons =
         i.action === "shared"
@@ -202,20 +199,21 @@ export function runPage(
                <input type="hidden" name="run" value="${esc(run.id)}"><input type="hidden" name="message" value="${esc(i.message_id)}">
                <button class="btn" name="decision" value="release">Release next time</button>
                <button class="btn" name="decision" value="keep">Keep protected</button></form>`;
-      return `<tr><td>${actionChip}</td>
-        <td><b>${esc(h?.subject ?? "")}</b><br><span class="muted">${esc(h?.from ?? i.sender_domain ?? "")}</span>
-          <div class="chips" style="margin-top:6px">${label}${hints(i.masked_hints)}${att}</div>
-          ${i.reason ? `<div class="muted" style="font-size:14px">${esc(i.reason)}</div>` : ""}</td>
+      return `<tr><td>${actionChip}</td><td>${because}</td>
+        <td><a href="${esc(gmailLink(i.message_id, gmailAddress))}" target="_blank" rel="noopener">Open in Gmail ↗</a></td>
         <td><div class="row">${buttons}${fb}</div></td></tr>`;
     })
     .join("");
+  const body = items.length
+    ? `<div class="scroll"><table><thead><tr><th>Result</th><th>Why</th><th>Email</th><th>Your decision</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    : `<div class="card">Email details for this request have expired. We keep them for 7 days.</div>`;
   return layout(
-    "Run",
+    "Request",
     `<p><a href="/activity">← Activity</a></p>
      <h1>${esc(ASSISTANT[run.assistant] ?? run.assistant)} · ${esc(run.tool)}</h1>
      <p class="muted">${esc(when(run.created_at))} · asked for “${esc(run.query ?? "")}” · ${runChips(run)}</p>
-     <p class="muted">Subjects are fetched from Gmail now, just for this page. They are not stored.</p>
-     <div class="scroll"><table><thead><tr><th>Result</th><th>Email</th><th>Your decision</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+     <p class="muted">"Open in Gmail" opens the email in your own Gmail. We don't store or fetch its subject or content.</p>
+     ${body}`,
     nav,
   );
 }

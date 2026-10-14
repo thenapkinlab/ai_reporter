@@ -7,15 +7,17 @@
 //   USER#<uid>    GMAIL                           address, KMS-encrypted refresh token
 //   USER#<uid>    SETTINGS                        withhold medical / financial
 //   USER#<uid>    RUN#<runId>                     one assistant tool call (runId sorts by time)
-//   USER#<uid>    ITEM#<runId>#<messageId>        one email touched by that call (no content)
-//   USER#<uid>    LABEL#<messageId>               cached classifier label
+//   USER#<uid>    ITEM#<runId>#<messageId>        one email touched by that call: ID + decision only
+//   USER#<uid>    LABEL#<messageId>               cached classifier result: category + item types only
 //   USER#<uid>    RELEASE#message#<messageId>     user chose "Release next time"
 //   USER#<uid>    FEEDBACK#<messageId>            release | keep
 //
-// RUN, ITEM and LABEL records expire after 90 days through the table's TTL attribute.
+// Retention through the table's TTL attribute: RUN records (assistant, query, counts) 90 days;
+// ITEM and LABEL records (anything about an individual email) 7 days. No email content, sender,
+// or model-written text is ever stored.
 
 import type { Category, Label } from "../filter/classifier";
-import { maskedHints, type Decision, type LabelCache, type Policy } from "../filter/engine";
+import type { Decision, LabelCache, Policy } from "../filter/engine";
 import type { Item, Table } from "./table";
 import {
   inferRunType,
@@ -28,11 +30,12 @@ import {
   type UserStore,
 } from "./types";
 
-const RETENTION_DAYS = 90;
+export const RUN_DAYS = 90;
+export const EMAIL_DAYS = 7;
 
 const pkFor = (uid: string) => `USER#${uid}`;
 const msKey = (d: Date) => String(d.getTime()).padStart(13, "0");
-const expiresAt = (now: Date) => Math.floor(now.getTime() / 1000) + RETENTION_DAYS * 86400;
+const expiresAt = (now: Date, days: number) => Math.floor(now.getTime() / 1000) + days * 86400;
 
 function toRunRow(it: Item): RunRow {
   return {
@@ -43,7 +46,6 @@ function toRunRow(it: Item): RunRow {
     run_type: it.runType as RunRow["run_type"],
     shared_count: Number(it.shared ?? 0),
     withheld_count: Number(it.withheld ?? 0),
-    redacted_count: Number(it.redacted ?? 0),
     created_at: String(it.createdAt),
   };
 }
@@ -90,13 +92,22 @@ class TableUserStore implements UserStore {
               category: r.category as Category,
               confidence: Number(r.confidence),
               sensitive: (r.sensitive as Label["sensitive"]) ?? [],
-              reason: String(r.reason ?? ""),
+              reason: "",
               source: r.source as Label["source"],
             }
           : null;
       },
       put: async (messageId, label) => {
-        await this.table.put({ pk: this.pk, sk: `LABEL#${messageId}`, ...label, expiresAt: expiresAt(new Date()) });
+        // The model's free-text reason is not stored.
+        await this.table.put({
+          pk: this.pk,
+          sk: `LABEL#${messageId}`,
+          category: label.category,
+          confidence: label.confidence,
+          sensitive: label.sensitive,
+          source: label.source,
+          expiresAt: expiresAt(new Date(), EMAIL_DAYS),
+        });
       },
     };
   }
@@ -107,7 +118,8 @@ class TableUserStore implements UserStore {
       .filter((r) => r.assistant === meta.assistant && r.query === meta.query)
       .map((r) => new Date(String(r.createdAt)));
     const count = (a: string) => decisions.filter((d) => d.action === a).length;
-    const exp = expiresAt(now);
+    const reasons: Record<string, number> = {};
+    for (const d of decisions) for (const b of d.because) reasons[b] = (reasons[b] ?? 0) + 1;
 
     const run: Item = {
       pk: this.pk,
@@ -122,23 +134,17 @@ class TableUserStore implements UserStore {
       runType: inferRunType(meta.query, prior, now),
       shared: count("shared"),
       withheld: count("withheld"),
-      redacted: count("redacted"),
+      reasons,
       createdAt: now.toISOString(),
-      expiresAt: exp,
+      expiresAt: expiresAt(now, RUN_DAYS),
     };
     const items: Item[] = decisions.map((d) => ({
       pk: this.pk,
       sk: `ITEM#${runId}#${d.messageId}`,
       messageId: d.messageId,
-      senderDomain: d.senderDomain,
       action: d.action,
-      category: d.label.category,
-      confidence: d.label.confidence,
-      reason: d.label.reason,
-      detectors: [...new Set(d.hits.map((h) => h.type))].join(","),
       because: d.because.join(", "),
-      maskedHints: JSON.stringify(maskedHints(d.hits)),
-      expiresAt: exp,
+      expiresAt: expiresAt(now, EMAIL_DAYS),
     }));
     await this.table.putMany([run, ...items]);
   }
@@ -154,34 +160,29 @@ class TableUserStore implements UserStore {
     const rows = await this.table.query(this.pk, { prefix: `ITEM#${runId}#` });
     const fb = await this.table.getMany(rows.map((i) => ({ pk: this.pk, sk: `FEEDBACK#${String(i.messageId)}` })));
     const feedback = new Map(fb.map((f) => [String(f.messageId), String(f.decision)]));
-    const order: Record<string, number> = { withheld: 0, redacted: 1, shared: 2 };
     const items: RunItemRow[] = rows
       .map((i) => ({
         message_id: String(i.messageId),
-        sender_domain: (i.senderDomain as string) ?? null,
-        action: i.action as RunItemRow["action"],
-        category: i.category as Category,
-        confidence: Number(i.confidence),
-        reason: (i.reason as string) ?? null,
-        detectors: (i.detectors as string) ?? null,
-        masked_hints: (i.maskedHints as string) ?? null,
-        because: (i.because as string) ?? null,
+        action: (i.action === "withheld" ? "withheld" : "shared") as RunItemRow["action"],
+        because: (i.because as string) || null,
         feedback: feedback.get(String(i.messageId)) ?? null,
       }))
-      .sort((a, b) => (order[a.action] ?? 2) - (order[b.action] ?? 2));
+      .sort((a, b) => (a.action === b.action ? 0 : a.action === "withheld" ? -1 : 1));
     return { run: toRunRow(r), items };
   }
 
   async totals(days = 7, now = new Date()): Promise<Totals> {
     const since = new Date(now.getTime() - days * 86400000);
     const rows = await this.table.query(this.pk, { from: `RUN#${msKey(since)}`, to: "RUN#~" });
-    const t: Totals = { read: 0, withheld: 0, redacted: 0, background: 0 };
+    const t: Totals = { read: 0, withheld: 0, background: 0, byReason: {}, byAssistant: {} };
     for (const r of rows) {
-      const shared = Number(r.shared ?? 0), withheld = Number(r.withheld ?? 0), redacted = Number(r.redacted ?? 0);
-      t.read += shared + withheld + redacted;
+      const shared = Number(r.shared ?? 0), withheld = Number(r.withheld ?? 0);
+      t.read += shared + withheld;
       t.withheld += withheld;
-      t.redacted += redacted;
       if (r.runType === "background_likely") t.background++;
+      const a = String(r.assistant ?? "unknown");
+      t.byAssistant[a] = (t.byAssistant[a] ?? 0) + shared + withheld;
+      for (const [k, v] of Object.entries((r.reasons as Record<string, number>) ?? {})) t.byReason[k] = (t.byReason[k] ?? 0) + Number(v);
     }
     return t;
   }

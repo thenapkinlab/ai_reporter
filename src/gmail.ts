@@ -181,20 +181,4 @@ export class GmailMailbox implements Mailbox {
     };
   }
 
-  async headers(ids: string[]): Promise<Record<string, { subject: string; from: string }>> {
-    const out: Record<string, { subject: string; from: string }> = {};
-    await Promise.all(
-      ids.map(async (id) => {
-        try {
-          const m = await this.api<GmailMessage>(
-            `/messages/${encodeURIComponent(id)}?format=metadata&metadataHeaders=Subject&metadataHeaders=From`,
-          );
-          out[id] = { subject: header(m.payload, "Subject"), from: header(m.payload, "From") };
-        } catch {
-          out[id] = { subject: "(no longer available)", from: "" };
-        }
-      }),
-    );
-    return out;
-  }
 }

@@ -136,15 +136,9 @@ export function createApp(deps: AppDeps) {
     const runMatch = path.match(/^\/runs\/([\w-]+)$/);
     if (runMatch && !isPost) {
       const found = await store.run(runMatch[1]!);
-      if (!found) return html(messagePage("Not found", "That run doesn't exist.", nav("activity")), 404);
-      let headers: Record<string, { subject: string; from: string }> = {};
-      try {
-        const mb = await mailboxFor(session.uid);
-        if (mb) headers = await mb.headers(found.items.map((i) => i.message_id));
-      } catch {
-        // Subjects are optional; the page still shows actions and labels.
-      }
-      return html(runPage(nav("activity"), found.run, found.items, headers));
+      if (!found) return html(messagePage("Not found", "That request doesn't exist.", nav("activity")), 404);
+      const conn = cfg.dev ? null : await accounts.getGmail(session.uid);
+      return html(runPage(nav("activity"), found.run, found.items, conn?.gmail_address ?? null));
     }
 
     if (path === "/settings" && !isPost) {

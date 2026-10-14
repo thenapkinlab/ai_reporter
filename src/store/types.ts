@@ -23,20 +23,14 @@ export interface RunRow {
   run_type: RunType;
   shared_count: number;
   withheld_count: number;
-  redacted_count: number;
   created_at: string;
 }
 
+/** One email touched by a run. Only its ID and the decision are kept, for 7 days. */
 export interface RunItemRow {
   message_id: string;
-  sender_domain: string | null;
-  action: "shared" | "redacted" | "withheld";
-  category: Category;
-  confidence: number;
-  reason: string | null;
-  detectors: string | null;
-  masked_hints: string | null;
-  /** Why it was withheld, e.g. "financial, bank account". */
+  action: "shared" | "withheld";
+  /** Why it was withheld, e.g. "financial, bank account". Empty when shared. */
   because: string | null;
   feedback: string | null;
 }
@@ -44,8 +38,10 @@ export interface RunItemRow {
 export interface Totals {
   read: number;
   withheld: number;
-  redacted: number;
   background: number;
+  /** Withhold reasons, e.g. { medical: 3, "bank account": 2 }. */
+  byReason: Record<string, number>;
+  byAssistant: Record<string, number>;
 }
 
 /** Everything one signed-in user can read or change. */
