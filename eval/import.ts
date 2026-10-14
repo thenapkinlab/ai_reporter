@@ -19,8 +19,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { asyncBufferFromFile, parquetReadObjects } from "hyparquet";
-import { ibanValid, luhn, type DetectorType } from "../src/filter/detectors";
-import type { Category } from "../src/filter/classifier";
+import { ibanValid, luhn } from "../src/filter/detectors";
+import type { Category, SensitiveItem } from "../src/filter/classifier";
 import type { EvalCase } from "./score";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -41,26 +41,34 @@ const LANG_TAG: Record<string, string> = {
 };
 
 // Personal finance documents; company contracts, filings and data formats are left out.
+// Payment and transaction confirmations are receipts ("other" by our policy) and are left out too;
+// they are still withheld when they contain sensitive items (covered by the document set).
 const GRETEL_FINANCIAL = new Set([
   "Bank Statement", "Credit Card Statement", "Loan Application", "Loan Agreement", "Mortgage Contract",
   "Mortgage Amortization Schedule", "Real Estate Loan Agreement", "Tax Return", "Tax Assessment Notice",
-  "Payment Confirmation", "Transaction Confirmation", "Trade Confirmation", "Credit Application",
+  "Trade Confirmation", "Credit Application",
   "Credit Card Application", "Cryptocurrency Transaction Report", "Pension Plan Agreement", "Financial Aid Application",
 ]);
 const GRETEL_MEDICAL = new Set(["Health Insurance Claim Form"]);
 
-// Gretel's personal-data labels mapped to our detector types.
-const PII_MAP: Record<string, DetectorType> = {
+// Gretel's personal-data labels mapped to the policy's sensitive items (what decides withholding).
+const PII_ITEM: Record<string, SensitiveItem> = {
   credit_card_number: "card_number",
-  iban: "iban",
-  bban: "account_number",
-  ssn: "us_ssn",
-  account_pin: "password",
-  password: "password",
-  api_key: "api_key",
+  credit_card_security_code: "card_number",
+  iban: "bank_account",
+  bban: "bank_account",
+  bank_routing_number: "bank_account",
+  ssn: "government_id",
+  passport_number: "government_id",
+  driver_license_number: "government_id",
+  account_pin: "credentials",
+  password: "credentials",
+  api_key: "credentials",
+  date_of_birth: "date_of_birth",
 };
-// Labelled by Gretel but not detected by us yet; reported as known gaps.
-const KNOWN_GAPS = ["passport_number", "credit_card_security_code", "bank_routing_number", "swift_bic_code", "driver_license_number", "date_of_birth", "phone_number", "street_address"];
+// Labelled by Gretel but not checked here: not sensitive by our policy (phone, SWIFT/BIC, customer IDs),
+// or left to the model (a street address may be a business, not a home).
+const NOT_CHECKED = ["street_address", "phone_number", "swift_bic_code"];
 
 // ---------------------------------------------------------------- helpers
 
@@ -201,9 +209,9 @@ export interface RedactionCase {
   id: string;
   tags: string[];
   text: string;
-  /** Values our detectors must find (checksum-valid where a checksum exists). */
-  required: { type: DetectorType; value: string }[];
-  /** Labelled values we don't detect yet, by Gretel label. */
+  /** Labelled values the detectors should find (checksum-valid where a checksum exists). */
+  required: { item: SensitiveItem; label: string; value: string }[];
+  /** Labelled values not scored here, by Gretel label (see NOT_CHECKED). */
   gaps: string[];
 }
 
@@ -218,13 +226,14 @@ function toRedactionCase(id: string, r: Gr, tag: string): RedactionCase | null {
   const gaps: string[] = [];
   for (const s of spans) {
     const value = r.generated_text.slice(s.start, s.end);
-    const type = PII_MAP[s.label];
-    if (type) {
+    const item = PII_ITEM[s.label];
+    if (item) {
       const digits = value.replace(/\D/g, "");
-      if (type === "card_number" && !(digits.length >= 13 && luhn(digits))) continue; // fake-looking number
-      if (type === "iban" && !ibanValid(value.replace(/\s/g, "").toUpperCase())) continue;
-      required.push({ type, value });
-    } else if (KNOWN_GAPS.includes(s.label)) gaps.push(s.label);
+      // Real card numbers and IBANs always pass their checksum; Gretel's invalid ones are skipped.
+      if (s.label === "credit_card_number" && !(digits.length >= 13 && luhn(digits))) continue;
+      if (s.label === "iban" && !ibanValid(value.replace(/\s/g, "").toUpperCase())) continue;
+      required.push({ item, label: s.label, value });
+    } else if (NOT_CHECKED.includes(s.label)) gaps.push(s.label);
   }
   if (!required.length && !gaps.length) return null;
   return { id, tags: ["source:gretel", tag], text: r.generated_text, required, gaps };

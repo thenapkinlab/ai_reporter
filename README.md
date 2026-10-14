@@ -25,7 +25,10 @@ Claude / ChatGPT ──MCP + AuthKit token──► Lambda Function URL /mcp ─
   never scanned in the background.
 - **Decision:** each email is shared unchanged or withheld whole. It is withheld if it is medical or financial, or
   contains a card number, bank account, government ID, password or key, one-time code, home address or date of
-  birth. Pattern detectors (with checksums) and one batched model call decide together; either one is enough.
+  birth. Pattern detectors and one batched model call decide together; either one is enough. Detectors use
+  checksums where a format has one (cards, IBANs, Aadhaar, personnummer) and otherwise only fire right after a
+  label ("Passwort:", "date of birth", "routing number") in English, German, French, Spanish, Italian, Dutch and
+  Swedish. Unlabelled values (CSV columns, EDI or SWIFT fields) are left to the model.
   If the model is unavailable, emails with sensitive hints are withheld.
 
 ## What the assistant receives, and what it never receives
@@ -95,16 +98,25 @@ npm run eval                                  # rules-only baseline + Nova Micro
 npm run eval -- --models eu.amazon.nova-micro-v1:0,<another-model-id> --tags adversarial
 ```
 
-The report (`eval/results/<timestamp>.md`) shows, per model: recall (sensitive emails withheld), precision,
-accuracy by case type, a threshold sweep, the confusion matrix, every miss and false alarm, latency and tokens.
-Each model is scored twice: as the pipeline works today (rules can declare an email "other" without the model)
-and with the model consulted on every email.
+The report (`eval/results/<timestamp>.md`) shows, per model (positive = should be withheld):
+
+| Metric | Meaning |
+|---|---|
+| Recall | TP / (TP + FN): sensitive emails that were withheld |
+| Precision | TP / (TP + FP): withheld emails that should have been |
+| FPR | FP / (FP + TN): everyday emails wrongly withheld |
+| Category accuracy | medical / financial / other label correct |
+| Unanswered rate | emails the model gave no usable answer for (withheld if they look sensitive) |
+| Latency p50 / p95 | per Bedrock request (one batch of up to 10 emails) |
+
+plus a threshold sweep (recall and FPR), accuracy by case type, the confusion matrix, and every false negative
+and false positive. The prompt version is stamped on each report.
 
 ### Public datasets
 
 ```bash
 npm run eval:import       # downloads (cached) and builds eval/external/ (git-ignored)
-npm run eval:redaction    # detector recall per value type and language, no model, no AWS
+npm run eval:redaction    # detector recall per sensitive item, Gretel label and language; no model, no AWS
 npm run eval -- --external   # classifier benchmark on the public cases (needs aws login)
 ```
 

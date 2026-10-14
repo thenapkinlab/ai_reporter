@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
 import { BedrockClassifier, type CallInfo } from "../src/aws/bedrock";
-import type { Label } from "../src/filter/classifier";
+import { PROMPT_VERSION, type Label } from "../src/filter/classifier";
 import type { RedactionCase } from "./import";
 import { accuracyByTag, confusion, outcomeFor, percentile, prepare, score, type EvalCase, type Outcome, type Prepared } from "./score";
 
@@ -96,9 +96,14 @@ const pct = (x: number | null) => (x === null ? "–" : `${(x * 100).toFixed(1)}
 
 function report(runs: Run[], prepared: Prepared[], threshold: number): string {
   const lines: string[] = [];
-  lines.push(`# Share-or-withhold benchmark`, ``, `${new Date().toISOString()} · ${prepared.length} cases · category threshold ${threshold}`, ``);
+  lines.push(`# Share-or-withhold benchmark`, ``, `${new Date().toISOString()} · ${prepared.length} cases · category threshold ${threshold} · prompt ${PROMPT_VERSION}`, ``);
+  lines.push(
+    `Positive = should be withheld. Recall = TP / (TP + FN). Precision = TP / (TP + FP). FPR (false positive rate) = FP / (FP + TN).`,
+    `Category accuracy = correct medical / financial / other label. Unanswered rate = emails the model gave no usable answer for (the gateway withholds these if they look sensitive).`,
+    ``,
+  );
   lines.push(`## Summary`, ``);
-  lines.push(`| Model | Withheld when it should (recall) | Precision | Everyday emails wrongly withheld | Category accuracy | Unanswered emails | Latency per request p50 / p95 | Tokens in / out |`);
+  lines.push(`| Model | Recall | Precision | FPR | Category accuracy | Unanswered rate | Latency p50 / p95 (per request) | Tokens in / out |`);
   lines.push(`|---|---|---|---|---|---|---|---|`);
   for (const r of runs) {
     const o = outcomes(r, prepared, threshold);
@@ -106,7 +111,7 @@ function report(runs: Run[], prepared: Prepared[], threshold: number): string {
     const lat = o.map((x) => x.latencyMs).filter((x): x is number => x !== null);
     const p50 = percentile(lat, 0.5), p95 = percentile(lat, 0.95);
     lines.push(
-      `| ${r.name} | ${pct(s.recall)} | ${pct(s.precision)} | ${pct(s.falseAlarmRate)} | ${pct(s.categoryAccuracy)} | ${r.failures} | ${p50 === null ? "–" : `${p50} / ${p95} ms`} | ${r.inputTokens} / ${r.outputTokens} |`,
+      `| ${r.name} | ${pct(s.recall)} | ${pct(s.precision)} | ${pct(s.fpr)} | ${pct(s.categoryAccuracy)} | ${r.rulesOnly ? "–" : `${pct(r.failures / prepared.length)} (${r.failures})`} | ${p50 === null ? "–" : `${p50} / ${p95} ms`} | ${r.inputTokens} / ${r.outputTokens} |`,
     );
   }
   lines.push(``);
@@ -114,10 +119,10 @@ function report(runs: Run[], prepared: Prepared[], threshold: number): string {
   for (const r of runs) {
     const o = outcomes(r, prepared, threshold);
     const s = score(o);
-    lines.push(`## ${r.name}`, ``, `**Category threshold sweep** (sensitive items withhold regardless)`, ``, `| Threshold | Recall | Wrongly withheld |`, `|---|---|---|`);
+    lines.push(`## ${r.name}`, ``, `**Category threshold sweep** (sensitive items withhold regardless)`, ``, `| Threshold | Recall | FPR |`, `|---|---|---|`);
     for (const t of THRESHOLDS) {
       const st = score(outcomes(r, prepared, t));
-      lines.push(`| ${t}${t === threshold ? " (current)" : ""} | ${pct(st.recall)} | ${pct(st.falseAlarmRate)} |`);
+      lines.push(`| ${t}${t === threshold ? " (current)" : ""} | ${pct(st.recall)} | ${pct(st.fpr)} |`);
     }
     lines.push(``, `**Correct decisions by case type**`, ``, `| Tag | Correct |`, `|---|---|`);
     for (const [tag, v] of Object.entries(accuracyByTag(o)).sort()) lines.push(`| ${tag} | ${v.correct}/${v.n} |`);
@@ -129,8 +134,8 @@ function report(runs: Run[], prepared: Prepared[], threshold: number): string {
       const x = byId.get(id)!;
       return `- \`${id}\` expected ${x.expected}${x.expectWithhold ? " (withhold)" : ""}; label ${x.label.category} ${x.label.confidence.toFixed(2)} [${x.label.sensitive.join(", ")}] (${x.label.source}); because: ${x.because.join(", ") || "–"} — ${x.label.reason}`;
     };
-    lines.push(``, `**Missed: shared but should be withheld** (${s.missed.length})`, ...s.missed.slice(0, 60).map(detail));
-    lines.push(``, `**False alarms: withheld but should be shared** (${s.falseAlarms.length})`, ...s.falseAlarms.slice(0, 60).map(detail));
+    lines.push(``, `**False negatives: shared but should be withheld** (${s.missed.length})`, ...s.missed.slice(0, 60).map(detail));
+    lines.push(``, `**False positives: withheld but should be shared** (${s.falsePositives.length})`, ...s.falsePositives.slice(0, 60).map(detail));
     const errs = o.filter((x) => x.modelError);
     if (errs.length) lines.push(``, `**Model errors** (${errs.length})`, ...errs.slice(0, 10).map((x) => `- \`${x.id}\`: ${x.modelError}`));
     lines.push(``);

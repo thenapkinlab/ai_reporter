@@ -105,11 +105,11 @@ export interface Scores {
   recall: number;
   /** Share of withheld emails that should have been withheld. */
   precision: number;
-  /** Share of emails that should be shared that were wrongly withheld. */
-  falseAlarmRate: number;
+  /** False positive rate: share of emails that should be shared that were withheld. */
+  fpr: number;
   categoryAccuracy: number | null;
   missed: string[];
-  falseAlarms: string[];
+  falsePositives: string[];
 }
 
 /** Cases tagged "ambiguous" are excluded from scoring. */
@@ -123,10 +123,10 @@ export function score(outcomes: Outcome[]): Scores {
     scored: s.length,
     recall: positives.length ? positives.filter((o) => o.withheld).length / positives.length : 1,
     precision: flagged.length ? flagged.filter((o) => o.expectWithhold).length / flagged.length : 1,
-    falseAlarmRate: negatives.length ? negatives.filter((o) => o.withheld).length / negatives.length : 0,
+    fpr: negatives.length ? negatives.filter((o) => o.withheld).length / negatives.length : 0,
     categoryAccuracy: categorised.length ? categorised.filter((o) => o.model!.category === o.expected).length / categorised.length : null,
     missed: positives.filter((o) => !o.withheld).map((o) => o.id),
-    falseAlarms: negatives.filter((o) => o.withheld).map((o) => o.id),
+    falsePositives: negatives.filter((o) => o.withheld).map((o) => o.id),
   };
 }
 
