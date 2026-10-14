@@ -86,7 +86,13 @@ class TableUserStore implements UserStore {
       get: async (messageId) => {
         const r = await this.table.get({ pk: this.pk, sk: `LABEL#${messageId}` });
         return r
-          ? { category: r.category as Category, confidence: Number(r.confidence), reason: String(r.reason ?? ""), source: r.source as Label["source"] }
+          ? {
+              category: r.category as Category,
+              confidence: Number(r.confidence),
+              sensitive: (r.sensitive as Label["sensitive"]) ?? [],
+              reason: String(r.reason ?? ""),
+              source: r.source as Label["source"],
+            }
           : null;
       },
       put: async (messageId, label) => {
@@ -130,8 +136,8 @@ class TableUserStore implements UserStore {
       confidence: d.label.confidence,
       reason: d.label.reason,
       detectors: [...new Set(d.hits.map((h) => h.type))].join(","),
+      because: d.because.join(", "),
       maskedHints: JSON.stringify(maskedHints(d.hits)),
-      removedAttachments: d.removedAttachments.length,
       expiresAt: exp,
     }));
     await this.table.putMany([run, ...items]);
@@ -148,7 +154,7 @@ class TableUserStore implements UserStore {
     const rows = await this.table.query(this.pk, { prefix: `ITEM#${runId}#` });
     const fb = await this.table.getMany(rows.map((i) => ({ pk: this.pk, sk: `FEEDBACK#${String(i.messageId)}` })));
     const feedback = new Map(fb.map((f) => [String(f.messageId), String(f.decision)]));
-    const order = { withheld: 0, redacted: 1, shared: 2 } as const;
+    const order: Record<string, number> = { withheld: 0, redacted: 1, shared: 2 };
     const items: RunItemRow[] = rows
       .map((i) => ({
         message_id: String(i.messageId),
@@ -159,10 +165,10 @@ class TableUserStore implements UserStore {
         reason: (i.reason as string) ?? null,
         detectors: (i.detectors as string) ?? null,
         masked_hints: (i.maskedHints as string) ?? null,
-        removed_attachments: Number(i.removedAttachments ?? 0),
+        because: (i.because as string) ?? null,
         feedback: feedback.get(String(i.messageId)) ?? null,
       }))
-      .sort((a, b) => order[a.action] - order[b.action]);
+      .sort((a, b) => (order[a.action] ?? 2) - (order[b.action] ?? 2));
     return { run: toRunRow(r), items };
   }
 

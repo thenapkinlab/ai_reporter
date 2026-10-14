@@ -66,7 +66,7 @@ describe("MCP endpoint", () => {
   it("filters search results and records the run", async () => {
     const { svc, runs } = service();
     const res = await handleMcp(
-      rpc({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "search_email", arguments: { query: "statement lab order" } } }),
+      rpc({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "search_email", arguments: { query: "statement lab order flight" } } }),
       svc,
     );
     const out = ((await res.json()) as { result: { structuredContent: { results: { id: string; snippet: string }[]; filter_note: string } } })
@@ -74,11 +74,12 @@ describe("MCP endpoint", () => {
     const ids = out.results.map((r) => r.id);
     expect(ids).not.toContain("fx-lab");
     expect(ids).not.toContain("fx-statement");
-    expect(ids).toContain("fx-card-receipt");
+    expect(ids).not.toContain("fx-card-receipt");
+    expect(ids).toContain("fx-flight");
     expect(JSON.stringify(out)).not.toContain("4111");
     expect(out.filter_note).toMatch(/withheld/);
     expect(runs).toHaveLength(1);
-    expect(runs[0]!.query).toBe("statement lab order");
+    expect(runs[0]!.query).toBe("statement lab order flight");
   });
 
   it("returns a notice instead of content for a withheld email", async () => {

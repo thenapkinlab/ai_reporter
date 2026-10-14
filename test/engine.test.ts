@@ -42,20 +42,28 @@ describe("filter engine on synthetic mail", () => {
     expect(d.hits.map((h) => h.type)).toContain("iban");
   });
 
-  it("shares a shop receipt but redacts the card number", async () => {
+  it("withholds a shop receipt that contains a card number", async () => {
     const d = await run("fx-card-receipt");
-    expect(d.action).toBe("redacted");
+    expect(d.action).toBe("withheld");
     expect(d.label.category).toBe("other");
-    expect(d.filtered?.body).toContain("[REDACTED: card number]");
-    expect(d.filtered?.body).not.toContain("4111");
-    expect(d.filtered?.snippet).not.toContain("4111");
+    expect(d.because).toEqual(["card number"]);
+    expect(d.filtered).toBeUndefined();
   });
 
-  it("redacts keys and passwords in a normal email", async () => {
-    const d = await run("fx-aws-key");
-    expect(d.action).toBe("redacted");
-    expect(d.filtered?.body).not.toContain("AKIAIOSFODNN7EXAMPLE");
-    expect(d.filtered?.body).not.toContain("hunter2");
+  it("withholds emails with keys, passwords or one-time codes", async () => {
+    expect((await run("fx-aws-key")).because).toEqual(["password or key"]);
+    expect((await run("fx-otp")).because).toEqual(["one-time code"]);
+  });
+
+  it("withholds when the model reports a sensitive item the patterns can't see", async () => {
+    const email = {
+      id: "x2", from: "Shop <orders@shop.example>", subject: "Your delivery", date: "", snippet: "",
+      body: "We'll deliver to Storgatan 12, 114 51 Stockholm on Friday.", attachments: [],
+    };
+    const model: Classifier = { classify: async () => ({ category: "other", confidence: 0.9, sensitive: ["home_address"], reason: "delivery address", source: "model" }) };
+    const d = await processEmail(email, deps({ classifier: model }));
+    expect(d.action).toBe("withheld");
+    expect(d.because).toEqual(["home address"]);
   });
 
   it("leaves a health newsletter and a flight confirmation alone", async () => {
@@ -83,7 +91,7 @@ describe("filter engine on synthetic mail", () => {
       body: "Following your visit, please continue the prescription for two more weeks.",
       attachments: [],
     };
-    const model: Classifier = { classify: async () => ({ category: "medical", confidence: 0.82, reason: "doctor follow-up", source: "model" }) };
+    const model: Classifier = { classify: async () => ({ category: "medical", confidence: 0.82, sensitive: [], reason: "doctor follow-up", source: "model" }) };
     const viaModel = await processEmail(ambiguous, deps({ classifier: model }));
     expect(viaModel.label.source).toBe("model");
     expect(viaModel.action).toBe("withheld");
@@ -91,22 +99,26 @@ describe("filter engine on synthetic mail", () => {
     const broken: Classifier = { classify: async () => { throw new Error("down"); } };
     const viaFallback = await processEmail(ambiguous, deps({ classifier: broken }));
     expect(viaFallback.label.source).toBe("fallback");
+    // Fails closed: an email with medical hints is withheld when the model is unavailable.
+    expect(viaFallback.action).toBe("withheld");
   });
 
-  it("writes a note with counts only", async () => {
+  it("writes a note with counts and reasons only", async () => {
     const ds = await Promise.all(["fx-lab", "fx-card-receipt", "fx-flight"].map((id) => run(id)));
     const note = filterNote(ds);
-    expect(note).toContain("1 email withheld (medical)");
-    expect(note).toContain("redacted");
+    expect(note).toContain("2 emails withheld");
+    expect(note).toContain("medical, card number");
     expect(note).not.toContain("lab results");
+    expect(note).not.toContain("4111");
   });
 });
 
 describe("parseModelLabel", () => {
   it("parses JSON wrapped in prose and clamps confidence", () => {
-    expect(parseModelLabel('Sure: {"category":"financial","confidence":1.4,"reason":"bank statement"}')).toEqual({
+    expect(parseModelLabel('Sure: {"category":"financial","confidence":1.4,"sensitive":["bank_account","nonsense"],"reason":"bank statement"}')).toEqual({
       category: "financial",
       confidence: 1,
+      sensitive: ["bank_account"],
       reason: "bank statement",
       source: "model",
     });

@@ -1,9 +1,18 @@
-// Runs one email through detectors, signals, classifier and policy, and produces
-// both the filtered view the assistant gets and the audit record (without content).
+// Runs one email through detectors, signals and the classifier, then decides: share the
+// email unchanged, or withhold it whole. Also produces the audit record (no content).
 
-import { detect, redact, type Hit, DETECTOR_LABELS } from "./detectors";
-import { computeSignals, isCandidate } from "./signals";
-import { ruleLabel, fallbackLabel, type Category, type Classifier, type Label } from "./classifier";
+import { detect, type Hit, DETECTOR_LABELS } from "./detectors";
+import { computeSignals, isCandidate, type Signals } from "./signals";
+import {
+  DETECTOR_ITEM,
+  ITEM_LABELS,
+  fallbackLabel,
+  ruleLabel,
+  type Category,
+  type Classifier,
+  type Label,
+  type SensitiveItem,
+} from "./classifier";
 import { senderDomain, type Attachment, type Email } from "../mail";
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -30,7 +39,7 @@ export interface EngineDeps {
   policy: Policy;
 }
 
-export type Action = "shared" | "redacted" | "withheld";
+export type Action = "shared" | "withheld";
 
 export interface AttachmentInfo {
   filename: string;
@@ -54,11 +63,10 @@ export interface Decision {
   action: Action;
   label: Label;
   hits: Hit[];
-  /** Values replaced with [REDACTED] in what the assistant received. */
-  redactions: number;
-  removedAttachments: string[];
+  /** Why it was withheld, e.g. ["financial", "bank account"]. Empty when shared. */
+  because: string[];
   unscannedAttachments: string[];
-  /** Present unless the email is withheld. */
+  /** Present only when shared. */
   filtered?: FilteredEmail;
 }
 
@@ -72,9 +80,7 @@ async function scanAttachment(att: Attachment, deps: EngineDeps): Promise<Scanne
   if (att.size > MAX_ATTACHMENT_BYTES || !SCANNABLE.test(att.mimeType)) return { att, text: null, hits: [] };
   try {
     const bytes = await att.load();
-    const text = att.mimeType.startsWith("text/")
-      ? new TextDecoder().decode(bytes)
-      : await deps.extractText(att, bytes);
+    const text = att.mimeType.startsWith("text/") ? new TextDecoder().decode(bytes) : await deps.extractText(att, bytes);
     if (text === null) return { att, text: null, hits: [] };
     const clipped = text.slice(0, MAX_TEXT_CHARS);
     return { att, text: clipped, hits: detect(clipped) };
@@ -83,97 +89,101 @@ async function scanAttachment(att: Attachment, deps: EngineDeps): Promise<Scanne
   }
 }
 
-async function labelEmail(email: Email, text: string, hits: Hit[], deps: EngineDeps): Promise<Label> {
+/** The model's label for an email (cached). `modelFailed` means the fallback was used instead. */
+async function labelEmail(email: Email, text: string, signals: Signals, deps: EngineDeps): Promise<{ label: Label; modelFailed: boolean }> {
   const cached = await deps.cache.get(email.id);
-  if (cached) return cached;
-  const signals = computeSignals(senderDomain(email.from), text, hits);
-  let label = ruleLabel(signals, isCandidate(signals, email.attachments.length > 0));
-  if (!label) {
-    try {
-      label = deps.classifier
-        ? await deps.classifier.classify({ from: email.from, subject: email.subject, text })
-        : fallbackLabel(signals);
-    } catch {
-      label = fallbackLabel(signals);
-    }
+  if (cached) return { label: cached, modelFailed: false };
+  if (!deps.classifier) return { label: ruleLabel(signals) ?? fallbackLabel(signals), modelFailed: false };
+  try {
+    const label = await deps.classifier.classify({ from: email.from, subject: email.subject, text });
+    await deps.cache.put(email.id, label);
+    return { label, modelFailed: false };
+  } catch {
+    // Not cached, so the model is tried again next time.
+    return { label: fallbackLabel(signals), modelFailed: true };
   }
-  await deps.cache.put(email.id, label);
-  return label;
+}
+
+export interface DecideInput {
+  label: Label;
+  rule: Label | null;
+  hits: Hit[];
+  modelFailed: boolean;
+  /** The email had medical/financial hints or attachments (used only when the model failed). */
+  candidate: boolean;
+  released: boolean;
+  policy: Policy;
+}
+
+/**
+ * Withhold if any of: a withheld category (from the model or a clear rule), any sensitive item
+ * the model reports, any sensitive item a pattern detector proves, or (fail closed) the model
+ * was unavailable for an email with sensitive hints. A user's "release" overrides all of it.
+ */
+export function decide(i: DecideInput): string[] {
+  if (i.released) return [];
+  const because: string[] = [];
+  const p = i.policy;
+  for (const l of [i.label, i.rule]) {
+    if (l && l.category !== "other" && p.withhold.has(l.category) && l.confidence >= p.threshold && !because.includes(l.category))
+      because.push(l.category);
+  }
+  const items = new Set<SensitiveItem>([...i.label.sensitive, ...i.hits.map((h) => DETECTOR_ITEM[h.type])]);
+  for (const item of items) because.push(ITEM_LABELS[item]);
+  if (i.modelFailed && i.candidate && because.length === 0) because.push("unchecked (model unavailable)");
+  return because;
 }
 
 export async function processEmail(email: Email, deps: EngineDeps): Promise<Decision> {
   const domain = senderDomain(email.from);
-  const subjectHits = detect(email.subject);
-  const snippetHits = detect(email.snippet);
-  const bodyHits = detect(email.body);
   const scanned = await Promise.all(email.attachments.map((a) => scanAttachment(a, deps)));
-
   const attachmentText = scanned
     .filter((s) => s.text)
     .map((s) => `\n[Attachment: ${s.att.filename}]\n${s.text}`)
     .join("");
   const text = `${email.subject}\n${email.body}${attachmentText}`.slice(0, MAX_TEXT_CHARS);
-  const allHits = [...subjectHits, ...bodyHits, ...scanned.flatMap((s) => s.hits)];
-  const label = await labelEmail(email, text, allHits, deps);
+  const hits = [...detect(email.subject), ...detect(email.snippet), ...detect(email.body), ...scanned.flatMap((s) => s.hits)];
+  const signals = computeSignals(domain, text, hits);
+  const { label, modelFailed } = await labelEmail(email, text, signals, deps);
 
-  const unscannedAttachments = scanned.filter((s) => s.text === null).map((s) => s.att.filename);
   const p = deps.policy;
-  const released = p.releasedMessages.has(email.id) || (domain !== "" && p.releasedSenders.has(domain));
-
-  if (!released && p.withhold.has(label.category) && label.confidence >= p.threshold) {
-    return {
-      messageId: email.id,
-      senderDomain: domain,
-      action: "withheld",
-      label,
-      hits: allHits,
-      redactions: 0,
-      removedAttachments: email.attachments.map((a) => a.filename),
-      unscannedAttachments,
-    };
-  }
-
-  const flagged = scanned.filter((s) => s.hits.length > 0);
-  const kept = scanned.filter((s) => s.hits.length === 0);
-  const redactions = subjectHits.length + snippetHits.length + bodyHits.length;
-
-  return {
-    messageId: email.id,
-    senderDomain: domain,
-    action: redactions + flagged.length > 0 ? "redacted" : "shared",
+  const because = decide({
     label,
-    hits: allHits,
-    redactions,
-    removedAttachments: flagged.map((s) => s.att.filename),
-    unscannedAttachments,
+    rule: ruleLabel(signals),
+    hits,
+    modelFailed,
+    candidate: isCandidate(signals, email.attachments.length > 0),
+    released: p.releasedMessages.has(email.id) || (domain !== "" && p.releasedSenders.has(domain)),
+    policy: p,
+  });
+  const unscannedAttachments = scanned.filter((s) => s.text === null).map((s) => s.att.filename);
+  const base = { messageId: email.id, senderDomain: domain, label, hits, because, unscannedAttachments };
+
+  if (because.length) return { ...base, action: "withheld" };
+  return {
+    ...base,
+    action: "shared",
     filtered: {
       id: email.id,
       from: email.from,
-      subject: redact(email.subject, subjectHits),
+      subject: email.subject,
       date: email.date,
-      snippet: redact(email.snippet, snippetHits),
-      body: redact(email.body, bodyHits),
-      attachments: kept.map((s) => ({ filename: s.att.filename, mimeType: s.att.mimeType, size: s.att.size })),
+      snippet: email.snippet,
+      body: email.body,
+      attachments: email.attachments.map((a) => ({ filename: a.filename, mimeType: a.mimeType, size: a.size })),
     },
   };
 }
 
-/** The note the assistant sees: counts only, never subjects of withheld mail. */
+/** The note the assistant sees: counts and reasons only, never subjects or values. */
 export function filterNote(decisions: Decision[]): string {
   const withheld = decisions.filter((d) => d.action === "withheld");
-  const values = decisions.reduce((n, d) => n + d.redactions, 0);
-  const attachments = decisions
-    .filter((d) => d.action !== "withheld")
-    .reduce((n, d) => n + d.removedAttachments.length, 0);
-  if (withheld.length === 0 && values === 0 && attachments === 0) return "Privacy filter: nothing was removed.";
-  const parts: string[] = [];
-  if (withheld.length) {
-    const cats = [...new Set(withheld.map((d) => d.label.category))].join(", ");
-    parts.push(`${withheld.length} email${withheld.length > 1 ? "s" : ""} withheld (${cats})`);
-  }
-  if (values) parts.push(`${values} sensitive value${values > 1 ? "s" : ""} redacted`);
-  if (attachments) parts.push(`${attachments} attachment${attachments > 1 ? "s" : ""} removed`);
-  return `Privacy filter: ${parts.join("; ")} by the user's privacy settings. Tell the user if this affects your answer.`;
+  if (!withheld.length) return "Privacy filter: nothing was withheld.";
+  const reasons = [...new Set(withheld.flatMap((d) => d.because))].join(", ");
+  return (
+    `Privacy filter: ${withheld.length} email${withheld.length > 1 ? "s" : ""} withheld by the user's privacy settings ` +
+    `(${reasons}). Tell the user if this affects your answer; they can review it on their dashboard.`
+  );
 }
 
 export function maskedHints(hits: Hit[]): string[] {

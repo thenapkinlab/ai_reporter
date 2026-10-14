@@ -1,8 +1,9 @@
 // Scoring for the classifier evaluation. Pure functions, no AWS, so they can be unit-tested.
 
-import { detect, type DetectorType } from "../src/filter/detectors";
+import { detect, type DetectorType, type Hit } from "../src/filter/detectors";
 import { computeSignals, isCandidate, type Signals } from "../src/filter/signals";
 import { fallbackLabel, ruleLabel, type Category, type Label } from "../src/filter/classifier";
+import { decide, type Policy } from "../src/filter/engine";
 import { senderDomain } from "../src/mail";
 
 export interface EvalCase {
@@ -20,9 +21,11 @@ export interface EvalCase {
 export interface Prepared {
   c: EvalCase;
   text: string;
+  hits: Hit[];
   hitTypes: Set<DetectorType>;
   signals: Signals;
   rule: Label | null;
+  candidate: boolean;
 }
 
 export function prepare(c: EvalCase): Prepared {
@@ -34,9 +37,11 @@ export function prepare(c: EvalCase): Prepared {
   return {
     c,
     text,
+    hits,
     hitTypes: new Set(hits.map((h) => h.type)),
     signals,
-    rule: ruleLabel(signals, isCandidate(signals, atts.length > 0)),
+    rule: ruleLabel(signals),
+    candidate: isCandidate(signals, atts.length > 0),
   };
 }
 
@@ -44,55 +49,84 @@ export interface Outcome {
   id: string;
   tags: string[];
   expected: Category;
-  /** What the deployed pipeline would decide: rules first, model for unclear cases, fallback on failure. */
-  pipeline: Label;
-  /** The model's own answer on every email (null for rules-only or on failure). */
+  /** Ground truth: should the gateway withhold this email? */
+  expectWithhold: boolean;
+  /** The label the pipeline used (model, or fallback if the model failed / rules-only). */
+  label: Label;
+  withheld: boolean;
+  because: string[];
   model: Label | null;
   modelError: string | null;
   latencyMs: number | null;
 }
 
-export function pipelineLabel(p: Prepared, model: Label | null): Label {
-  return p.rule ?? model ?? fallbackLabel(p.signals);
+/** Withhold if medical/financial, or if it contains any sensitive item we listed in the test case. */
+export function expectWithhold(c: EvalCase): boolean {
+  return c.expected !== "other" || (c.redact?.length ?? 0) > 0 || c.tags.includes("withhold");
 }
 
-/**
- * Candidate design: rules may only settle clear *positives*; every other email goes to the model.
- * The current engine also lets rules declare "other" without a model call, which misses
- * sensitive emails that have no keywords, use other languages, or hide content in attachments.
- */
-export function pipelineLabelModelOnAll(p: Prepared, model: Label | null): Label {
-  if (p.rule && p.rule.category !== "other") return p.rule;
-  return model ?? fallbackLabel(p.signals);
-}
+export const DEFAULT_POLICY: Policy = {
+  withhold: new Set(["medical", "financial"]),
+  threshold: 0.6,
+  releasedMessages: new Set(),
+  releasedSenders: new Set(),
+};
 
-const withheld = (l: Label, t: number) => l.category !== "other" && l.confidence >= t;
+/** The gateway's decision for a prepared case, given the model's answer (or null). */
+export function outcomeFor(p: Prepared, model: Label | null, modelError: string | null, latencyMs: number | null, threshold: number, rulesOnly = false): Outcome {
+  const modelFailed = !rulesOnly && !model;
+  const label = model ?? p.rule ?? fallbackLabel(p.signals);
+  const because = decide({
+    label,
+    rule: p.rule,
+    hits: p.hits,
+    modelFailed,
+    candidate: p.candidate,
+    released: false,
+    policy: { ...DEFAULT_POLICY, threshold },
+  });
+  return {
+    id: p.c.id,
+    tags: p.c.tags,
+    expected: p.c.expected,
+    expectWithhold: expectWithhold(p.c),
+    label,
+    withheld: because.length > 0,
+    because,
+    model,
+    modelError,
+    latencyMs,
+  };
+}
 
 export interface Scores {
   scored: number;
+  /** Share of emails that should be withheld that were withheld. */
   recall: number;
+  /** Share of withheld emails that should have been withheld. */
   precision: number;
-  pipelineAccuracy: number;
-  modelAccuracy: number | null;
+  /** Share of emails that should be shared that were wrongly withheld. */
+  falseAlarmRate: number;
+  categoryAccuracy: number | null;
   missed: string[];
   falseAlarms: string[];
 }
 
-/** Protection scores at a withhold threshold. Cases tagged "ambiguous" are excluded. */
-export function score(outcomes: Outcome[], threshold: number): Scores {
+/** Cases tagged "ambiguous" are excluded from scoring. */
+export function score(outcomes: Outcome[]): Scores {
   const s = outcomes.filter((o) => !o.tags.includes("ambiguous"));
-  const positives = s.filter((o) => o.expected !== "other");
-  const caught = positives.filter((o) => withheld(o.pipeline, threshold));
-  const flagged = s.filter((o) => withheld(o.pipeline, threshold));
-  const modelled = s.filter((o) => o.model);
+  const positives = s.filter((o) => o.expectWithhold);
+  const negatives = s.filter((o) => !o.expectWithhold);
+  const flagged = s.filter((o) => o.withheld);
+  const categorised = s.filter((o) => o.model && !o.tags.includes("no-category"));
   return {
     scored: s.length,
-    recall: positives.length ? caught.length / positives.length : 1,
-    precision: flagged.length ? flagged.filter((o) => o.expected !== "other").length / flagged.length : 1,
-    pipelineAccuracy: s.filter((o) => o.pipeline.category === o.expected).length / (s.length || 1),
-    modelAccuracy: modelled.length ? modelled.filter((o) => o.model!.category === o.expected).length / modelled.length : null,
-    missed: positives.filter((o) => !withheld(o.pipeline, threshold)).map((o) => o.id),
-    falseAlarms: flagged.filter((o) => o.expected === "other").map((o) => o.id),
+    recall: positives.length ? positives.filter((o) => o.withheld).length / positives.length : 1,
+    precision: flagged.length ? flagged.filter((o) => o.expectWithhold).length / flagged.length : 1,
+    falseAlarmRate: negatives.length ? negatives.filter((o) => o.withheld).length / negatives.length : 0,
+    categoryAccuracy: categorised.length ? categorised.filter((o) => o.model!.category === o.expected).length / categorised.length : null,
+    missed: positives.filter((o) => !o.withheld).map((o) => o.id),
+    falseAlarms: negatives.filter((o) => o.withheld).map((o) => o.id),
   };
 }
 
@@ -103,7 +137,7 @@ export function accuracyByTag(outcomes: Outcome[]): Record<string, { n: number; 
     for (const t of o.tags) {
       out[t] ??= { n: 0, correct: 0 };
       out[t].n++;
-      if (o.pipeline.category === o.expected) out[t].correct++;
+      if (o.withheld === o.expectWithhold) out[t].correct++;
     }
   }
   return out;
@@ -115,7 +149,7 @@ export function confusion(outcomes: Outcome[]): Record<Category, Record<Category
     Category,
     Record<Category, number>
   >;
-  for (const o of outcomes) if (!o.tags.includes("ambiguous")) m[o.expected][o.pipeline.category]++;
+  for (const o of outcomes) if (!o.tags.includes("ambiguous") && !o.tags.includes("no-category")) m[o.expected][o.label.category]++;
   return m;
 }
 

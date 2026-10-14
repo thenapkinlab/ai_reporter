@@ -36,7 +36,8 @@ export interface RunItemRow {
   reason: string | null;
   detectors: string | null;
   masked_hints: string | null;
-  removed_attachments: number;
+  /** Why it was withheld, e.g. "financial, bank account". */
+  because: string | null;
   feedback: string | null;
 }
 

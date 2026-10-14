@@ -160,7 +160,7 @@ export function activityPage(
      <div class="tiles">
        <div class="tile"><b>${totals.read}</b><span>emails your assistants read, last 7 days</span></div>
        <div class="tile"><b>${totals.withheld}</b><span>withheld</span></div>
-       <div class="tile"><b>${totals.redacted}</b><span>shared with values redacted</span></div>
+       <div class="tile"><b>${totals.read - totals.withheld}</b><span>shared</span></div>
        <div class="tile"><b>${totals.background}</b><span>runs that look like background tasks</span></div>
      </div>
      ${
@@ -193,7 +193,7 @@ export function runPage(
       const actionChip = `<span class="chip c-${esc(i.action)}">${esc(i.action)}</span>`;
       const label =
         i.category === "other" ? "" : `<span class="chip">${esc(i.category)} ${(i.confidence * 100).toFixed(0)}%</span>`;
-      const att = i.removed_attachments ? `<span class="chip">${i.removed_attachments} attachment(s) removed</span>` : "";
+      const att = i.because ? `<span class="chip">withheld: ${esc(i.because)}</span>` : "";
       const fb = i.feedback ? `<span class="muted">You chose: ${esc(i.feedback)}</span>` : "";
       const buttons =
         i.action === "shared"
@@ -231,7 +231,8 @@ export function settingsPage(nav: Nav, s: { medical: boolean; financial: boolean
        ${box("medical", s.medical, "Medical: lab results, prescriptions, clinic letters, health insurance")}
        ${box("financial", s.financial, "Financial: bank and card statements, tax documents, payslips, loans")}
        <p class="muted">An email is withheld when the classifier is at least ${(threshold * 100).toFixed(0)}% confident.
-       Card numbers, ID numbers, passwords, API keys and one-time codes are always redacted.</p>
+       Emails containing card or bank account numbers, government IDs, passwords or keys, one-time codes,
+       home addresses or dates of birth are always withheld.</p>
        <button class="btn primary">Save</button>
      </form>
      <form method="post" action="/account/delete" class="card">
