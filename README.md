@@ -59,6 +59,22 @@ curl -s -X POST http://localhost:8787/mcp -H 'authorization: Bearer dev' -H 'x-d
 `npm test` runs the tests. `npm run typecheck` type-checks. `npm run synth` builds the CloudFormation template
 without deploying.
 
+## Evaluate the classifier
+
+`eval/dataset.json` holds ~90 synthetic, labelled emails: clear and hard cases, look-alikes that must not be
+withheld, other languages, attachments, prompt-injection attempts and redaction-only cases.
+
+```bash
+aws login
+npm run eval                                  # rules-only baseline + Nova Micro + Nova Lite
+npm run eval -- --models eu.amazon.nova-micro-v1:0,<another-model-id> --tags adversarial
+```
+
+The report (`eval/results/<timestamp>.md`) shows, per model: recall (sensitive emails withheld), precision,
+accuracy by case type, a threshold sweep, the confusion matrix, every miss and false alarm, latency and tokens.
+Each model is scored twice: as the pipeline works today (rules can declare an email "other" without the model)
+and with the model consulted on every email.
+
 ## Deploy to AWS
 
 ### 1. AWS account and CLI

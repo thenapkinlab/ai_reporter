@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "isolatedModules": true
   },
-  "include": ["src", "test", "infra"]
+  "include": ["src", "test", "infra", "eval"]
 }

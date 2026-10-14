@@ -20,10 +20,18 @@ function text(blocks: ContentBlock[] | undefined): string {
   return (blocks ?? []).map((b) => ("text" in b && b.text) || "").join("");
 }
 
+/** Per-call usage, reported to an optional observer (used by the evaluation script). */
+export interface CallInfo {
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+}
+
 export class BedrockClassifier implements Classifier {
   constructor(
     private modelId: string,
     private client = new BedrockRuntimeClient({}),
+    private onCall?: (info: CallInfo) => void,
   ) {}
 
   async classify(input: ClassifyInput): Promise<Label> {
@@ -37,6 +45,11 @@ export class BedrockClassifier implements Classifier {
         inferenceConfig: { maxTokens: 120, temperature: 0 },
       }),
     );
+    this.onCall?.({
+      inputTokens: r.usage?.inputTokens ?? 0,
+      outputTokens: r.usage?.outputTokens ?? 0,
+      latencyMs: r.metrics?.latencyMs ?? 0,
+    });
     const label = parseModelLabel(text(r.output?.message?.content));
     if (!label) throw new Error("unparseable model output");
     return label;
