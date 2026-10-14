@@ -19,7 +19,7 @@ import type { RedactionCase } from "./import";
 import { accuracyByTag, confusion, outcomeFor, percentile, prepare, score, type EvalCase, type Outcome, type Prepared } from "./score";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_MODELS = ["eu.amazon.nova-micro-v1:0", "eu.amazon.nova-lite-v1:0"];
+const DEFAULT_MODELS = ["eu.amazon.nova-2-lite-v1:0", "eu.anthropic.claude-haiku-4-5-20251001-v1:0"];
 const THRESHOLDS = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
 
 function arg(name: string, fallback?: string): string | undefined {

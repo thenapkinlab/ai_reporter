@@ -19,7 +19,7 @@ new GatewayStack(app, "AgentGateway", {
   workosClientId: ctx("workosClientId"),
   ssmPrefix: ctx("ssmPrefix", "/agent-gateway"),
   bedrockRegion: ctx("bedrockRegion", "eu-north-1"),
-  classifierModel: ctx("classifierModel", "eu.amazon.nova-micro-v1:0"),
+  classifierModel: ctx("classifierModel", "eu.amazon.nova-2-lite-v1:0"),
   extractorModel: ctx("extractorModel", "eu.amazon.nova-lite-v1:0"),
   withholdThreshold: ctx("withholdThreshold", "0.6"),
   mcpAudience: (app.node.tryGetContext("mcpAudience") as string | undefined) || undefined,

@@ -6,7 +6,7 @@
     "authkitDomain": "https://outgoing-sunrise-14-staging.authkit.app",
     "workosClientId": "client_01M4K1R362VJ19GHAZ7M2QTX0Q",
     "ssmPrefix": "/agent-gateway",
-    "classifierModel": "eu.amazon.nova-micro-v1:0",
+    "classifierModel": "eu.amazon.nova-2-lite-v1:0",
     "extractorModel": "eu.amazon.nova-lite-v1:0",
     "withholdThreshold": "0.6",
     "budgetEmail": ""

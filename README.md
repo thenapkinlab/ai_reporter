@@ -101,7 +101,7 @@ withheld, other languages, attachments, prompt-injection attempts and redaction-
 
 ```bash
 aws login
-npm run eval                                  # rules-only baseline + Nova Micro + Nova Lite
+npm run eval                                  # rules-only baseline + Nova 2 Lite + Haiku 4.5
 npm run eval -- --models eu.amazon.nova-micro-v1:0,<another-model-id> --tags adversarial
 ```
 
@@ -170,10 +170,11 @@ MTSamples' original terms are unclear, so it's for internal benchmarking only an
    The stack deploys to `region` in `cdk.json` (default `eu-north-1`, Stockholm). New free-plan accounts can
    only use the region they were created in.
 3. One-time per account and region: `npx cdk bootstrap aws://<account-id>/eu-north-1`.
-4. Bedrock: the defaults are Amazon Nova Micro (classifier) and Nova Lite (PDF/image text), called through
-   EU cross-region inference profiles from `bedrockRegion` (default `eu-north-1`), so email stays in the EU.
-   If Bedrock isn't available there yet, set `bedrockRegion` to `us-east-1` and the models to
-   `us.amazon.nova-micro-v1:0` / `us.amazon.nova-lite-v1:0`.
+4. Bedrock: the defaults are Amazon Nova 2 Lite (classifier and value finder) and Nova Lite (PDF/image text),
+   called through EU cross-region inference profiles from `bedrockRegion` (default `eu-north-1`), so email stays
+   in the EU. Claude Haiku 4.5 (`eu.anthropic.claude-haiku-4-5-20251001-v1:0`) scores higher on the benchmarks;
+   switch with `classifierModel` in `cdk.json`. If Bedrock isn't available in your region yet, set `bedrockRegion`
+   to `us-east-1` and use the `us.` model IDs.
 
 ### 2. WorkOS AuthKit (free up to 1M monthly users)
 
