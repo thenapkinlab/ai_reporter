@@ -26,6 +26,8 @@ export interface Table {
   delete(key: Key): Promise<void>;
   deleteMany(keys: Key[]): Promise<void>;
   query(pk: string, opts?: QueryOptions): Promise<Item[]>;
+  /** Atomically adds `by` to a numeric field (creating the item if needed) and returns the new value. */
+  add(key: Key, field: string, by: number, expiresAt: number): Promise<number>;
 }
 
 export class MemoryTable implements Table {
@@ -63,6 +65,13 @@ export class MemoryTable implements Table {
 
   async deleteMany(keys: Key[]) {
     for (const k of keys) await this.delete(k);
+  }
+
+  async add(key: Key, field: string, by: number, expiresAt: number) {
+    const it = this.items.get(this.id(key)) ?? { ...key, expiresAt };
+    it[field] = Number(it[field] ?? 0) + by;
+    this.items.set(this.id(key), it);
+    return it[field] as number;
   }
 
   async query(pk: string, opts: QueryOptions = {}) {

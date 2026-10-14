@@ -150,7 +150,13 @@ function breakdown(title: string, counts: Record<string, number>, label: (k: str
     .join("")}</div></div>`;
 }
 
-export function activityPage(nav: Nav, totals: Totals, runs: RunRow[], gmailConnected: boolean): string {
+export function activityPage(
+  nav: Nav,
+  totals: Totals,
+  runs: RunRow[],
+  gmailConnected: boolean,
+  usage?: { today: number; perDay: number },
+): string {
   const rows = runs
     .map(
       (r) => `<tr><td>${esc(when(r.created_at))}</td><td>${esc(ASSISTANT[r.assistant] ?? r.assistant)}<br><span class="muted">${esc(r.tool)}</span></td>
@@ -162,7 +168,7 @@ export function activityPage(nav: Nav, totals: Totals, runs: RunRow[], gmailConn
     "Activity",
     `<h1>Activity</h1>
      ${gmailConnected ? "" : `<div class="notice">Gmail isn't connected yet. <a href="/setup">Finish setup</a>.</div>`}
-     <p class="muted">Last 7 days</p>
+     <p class="muted">Last 7 days${usage ? ` · today ${usage.today} of ${usage.perDay} emails checked (resets 00:00 UTC)` : ""}</p>
      <div class="tiles">
        <div class="tile"><b>${totals.read}</b><span>emails your assistants read</span></div>
        <div class="tile"><b>${totals.withheld}</b><span>withheld</span></div>

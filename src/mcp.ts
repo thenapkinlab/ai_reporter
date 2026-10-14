@@ -11,7 +11,7 @@ export interface ToolResult {
 }
 
 export interface ToolBackend {
-  searchEmail(query: string, maxResults: number): Promise<ToolResult>;
+  searchEmail(query: string, maxResults: number, pageToken?: string): Promise<ToolResult>;
   readEmail(messageId: string): Promise<ToolResult>;
 }
 
@@ -22,8 +22,11 @@ export const TOOLS = [
     name: "search_email",
     title: "Search email",
     description:
-      "Search the user's Gmail. Use this for any email task. Accepts Gmail search syntax " +
-      "(e.g. 'from:airline newer_than:30d'). A privacy filter withholds medical and financial emails, and " +
+      "Search the user's Gmail. Use this for any email task. Write a focused Gmail search query: " +
+      "dates (newer_than:2m, after:2026/08/01), senders (from:(airline.com OR booking.com)), subject:, " +
+      "has:attachment, category:purchases, OR groups and -excluded words. Results come newest first; pass " +
+      "next_page_token as page_token for more. Each user has a daily limit on emails checked, so don't page " +
+      "through everything. A privacy filter withholds medical and financial emails, and " +
       "replaces sensitive values in other emails (card or bank numbers, IDs, passwords, codes, home addresses, " +
       "birth dates) with [removed: …]; filter_note gives counts and reason types. Attachment contents are never returned.",
     inputSchema: {
@@ -31,6 +34,7 @@ export const TOOLS = [
       properties: {
         query: { type: "string", description: "Gmail search query" },
         max_results: { type: "integer", minimum: 1, maximum: 25, default: 10 },
+        page_token: { type: "string", description: "next_page_token from a previous search with the same query" },
       },
       required: ["query"],
       additionalProperties: false,
@@ -85,7 +89,8 @@ async function callTool(backend: ToolBackend, params: Record<string, unknown>): 
       const query = typeof args.query === "string" ? args.query : "";
       if (!query.trim()) return toolError("query is required");
       const max = Math.min(25, Math.max(1, Number.isInteger(args.max_results) ? (args.max_results as number) : 10));
-      return await backend.searchEmail(query, max);
+      const page = typeof args.page_token === "string" && args.page_token ? args.page_token : undefined;
+      return await backend.searchEmail(query, max, page);
     }
     if (name === "read_email") {
       const id = typeof args.message_id === "string" ? args.message_id : "";

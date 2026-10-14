@@ -1,7 +1,7 @@
 // Synthetic mailbox for local dev and tests. Every value is fake: card 4111… is a published
 // test number, the IBAN is the standard example, the AWS key is AWS's documentation example.
 
-import type { Email, Mailbox } from "./mail";
+import type { Email, Mailbox, SearchPage } from "./mail";
 
 const enc = new TextEncoder();
 
@@ -88,13 +88,16 @@ export const FIXTURE_EMAILS: Email[] = [
 export class FixtureMailbox implements Mailbox {
   constructor(private emails: Email[] = FIXTURE_EMAILS) {}
 
-  async search(query: string, max: number): Promise<string[]> {
+  /** Pages are offsets into the matching list, written as the page token. */
+  async search(query: string, max: number, pageToken?: string): Promise<SearchPage> {
     const terms = query.toLowerCase().split(/\s+/).filter((t) => t && !t.includes(":"));
     const match = (e: Email) => {
       const hay = `${e.from} ${e.subject} ${e.body}`.toLowerCase();
       return terms.length === 0 || terms.some((t) => hay.includes(t));
     };
-    return this.emails.filter(match).slice(0, max).map((e) => e.id);
+    const start = Number(pageToken ?? 0) || 0;
+    const all = this.emails.filter(match);
+    return { ids: all.slice(start, start + max).map((e) => e.id), nextPageToken: start + max < all.length ? String(start + max) : null };
   }
 
   async get(id: string): Promise<Email> {

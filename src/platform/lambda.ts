@@ -3,7 +3,7 @@
 
 import type { APIGatewayProxyStructuredResultV2 as FunctionUrlResult, LambdaFunctionURLEvent } from "aws-lambda";
 import { createApp } from "../app";
-import { parseThreshold, type Config } from "../config";
+import { parseLimits, parseThreshold, type Config } from "../config";
 import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
 import { bedrockExtractor, BedrockClassifier } from "../aws/bedrock";
 import { DynamoTable } from "../aws/dynamo-table";
@@ -28,6 +28,7 @@ async function build() {
     sessionSecret: required("SESSION_SECRET (SSM)", secrets.SESSION_SECRET),
     withholdThreshold: parseThreshold(env.WITHHOLD_THRESHOLD),
     mcpAudience: env.MCP_AUDIENCE || undefined,
+    limits: parseLimits(env),
     dev: false, // never on Lambda
   };
   // Bedrock can run in a different region from the rest of the stack.

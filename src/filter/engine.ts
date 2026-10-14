@@ -7,6 +7,7 @@ import { computeSignals, isCandidate, type Signals } from "./signals";
 import {
   DETECTOR_ITEM,
   ITEM_LABELS,
+  ModelBusyError,
   fallbackLabel,
   ruleLabel,
   type Category,
@@ -96,7 +97,7 @@ export interface DecideInput {
   rule: Label | null;
   hits: Hit[];
   modelFailed: boolean;
-  /** The email had medical/financial hints or attachments (used only when the model failed). */
+  /** The email had medical/financial hints or attachments. Kept for the evaluation; no longer changes the decision. */
   candidate: boolean;
   released: boolean;
   policy: Policy;
@@ -106,7 +107,7 @@ export type Verdict = "share" | "redact" | "withhold";
 
 /**
  * Withhold whole: a withheld category (from the model or a clear rule), or (fail closed) the
- * model was unavailable for an email with sensitive hints. Otherwise, redact any sensitive item
+ * model was unavailable. Otherwise, redact any sensitive item
  * the model reports or a pattern detector proves. A user's "release" overrides all of it.
  */
 export function decide(i: DecideInput): { verdict: Verdict; because: string[] } {
@@ -118,7 +119,8 @@ export function decide(i: DecideInput): { verdict: Verdict; because: string[] } 
       categories.push(l.category);
   }
   if (categories.length) return { verdict: "withhold", because: categories };
-  if (i.modelFailed && i.candidate) return { verdict: "withhold", because: ["unchecked (model unavailable)"] };
+  // Removing values depends on the model, so without it nothing can be shared safely.
+  if (i.modelFailed) return { verdict: "withhold", because: ["unchecked (model unavailable)"] };
   const items = new Set<SensitiveItem>([...i.label.sensitive, ...i.hits.map((h) => DETECTOR_ITEM[h.type])]);
   if (items.size) return { verdict: "redact", because: [...items].map((x) => ITEM_LABELS[x]) };
   return { verdict: "share", because: [] };
@@ -201,7 +203,8 @@ function finish(pe: PreparedEmail, label: Label, modelFailed: boolean, deps: Eng
 /**
  * Decides several emails with as few model requests as possible: cached labels are reused,
  * the rest are labelled in batches of BATCH_SIZE. Any email the model didn't answer for is
- * treated as "model unavailable" (fail closed for emails with sensitive hints).
+ * treated as "model unavailable" and withheld. Throws ModelBusyError if the shared model budget
+ * is used up, so the caller can ask the assistant to retry instead of withholding everything.
  */
 export async function processEmails(emails: Email[], deps: EngineDeps): Promise<Decision[]> {
   const prepared = await Promise.all(emails.map((e) => prepareEmail(e, deps)));
@@ -222,8 +225,9 @@ export async function processEmails(emails: Email[], deps: EngineDeps): Promise<
         labels =
           chunk.length > 1 && classifier.classifyBatch
             ? await classifier.classifyBatch(inputs)
-            : await Promise.all(inputs.map((x) => classifier.classify(x).catch(() => null)));
-      } catch {
+            : await Promise.all(inputs.map((x) => classifier.classify(x).catch((e) => (e instanceof ModelBusyError ? Promise.reject(e) : null))));
+      } catch (e) {
+        if (e instanceof ModelBusyError) throw e;
         labels = chunk.map(() => null);
       }
       for (let j = 0; j < chunk.length; j++) {

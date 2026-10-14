@@ -1,7 +1,7 @@
 // Google OAuth for Gmail (read-only) and a Mailbox backed by the Gmail API.
 
 import { b64urlToBytes } from "./crypto";
-import type { Attachment, Email, Mailbox } from "./mail";
+import type { Attachment, Email, Mailbox, SearchPage } from "./mail";
 
 export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 const API = "https://gmail.googleapis.com/gmail/v1/users/me";
@@ -149,10 +149,11 @@ export class GmailMailbox implements Mailbox {
     return (await res.json()) as T;
   }
 
-  async search(query: string, max: number): Promise<string[]> {
+  async search(query: string, max: number, pageToken?: string): Promise<SearchPage> {
     const p = new URLSearchParams({ q: query, maxResults: String(max) });
-    const r = await this.api<{ messages?: { id: string }[] }>(`/messages?${p}`);
-    return (r.messages ?? []).map((m) => m.id);
+    if (pageToken) p.set("pageToken", pageToken);
+    const r = await this.api<{ messages?: { id: string }[]; nextPageToken?: string }>(`/messages?${p}`);
+    return { ids: (r.messages ?? []).map((m) => m.id), nextPageToken: r.nextPageToken ?? null };
   }
 
   async get(id: string): Promise<Email> {

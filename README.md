@@ -21,8 +21,22 @@ Claude / ChatGPT ──MCP + AuthKit token──► Lambda Function URL /mcp ─
 ```
 
 - **Tools:** `search_email(query, max_results)` and `read_email(message_id)`, both read-only with explicit annotations.
-- **Scope:** only the emails the assistant asks for are fetched and checked (at most 25 per search). The inbox is
-  never scanned in the background.
+- **Scope:** only the emails the assistant asks for are fetched and checked. The assistant's Gmail search query is
+  passed unchanged to the Gmail API (`q`), so Gmail does the filtering; at most 25 results per page, with
+  `page_token` for the next page. The inbox is never scanned in the background.
+
+## Usage limits
+
+| Limit | Default | When it's reached |
+|---|---|---|
+| Emails checked per user, per 10 minutes | 100 | Only the emails that fit are checked; the result carries a `usage_note`, no `next_page_token`. With nothing left, the tool returns an error saying when to try again. |
+| Emails checked per user, per UTC day | 500 | Same; the dashboard shows "today x of 500". |
+| Classifier requests per minute, all users | 18 (account quota for Nova 2 Lite is 20) | A request waits up to 20 s for the next minute, then the tool says "busy, try again in a minute" and the emails are not counted. Nothing is shared without the model. |
+| Lambda instances at once | 10 | Further requests are throttled by Lambda. |
+
+Counters are numbers in DynamoDB (`USAGE#…` per user, `MODELRPM#…` shared) that expire on their own. Change the
+defaults with the `userEmailsPer10Min`, `userEmailsPerDay`, `modelRequestsPerMinute` and `maxConcurrency` context
+values in `cdk.json`. Attachment text extraction (Nova Lite) has its own Bedrock quota and isn't counted yet.
 - **Decision:** each email is shared unchanged, shared with values removed, or withheld whole.
   - **Withheld whole:** medical or financial emails (removing values from a lab result still leaves a lab result).
   - **Values removed:** in every other email, card numbers, bank accounts, government IDs, passwords and keys,
@@ -35,7 +49,7 @@ Claude / ChatGPT ──MCP + AuthKit token──► Lambda Function URL /mcp ─
     copies the exact text of each value it finds; the gateway locates that text in the email itself and replaces
     it, so the model never rewrites the email.
   - **Fail closed:** if the model reports a value but the gateway can't find it in the email, or the model is
-    unavailable for an email with sensitive hints, the whole email is withheld.
+    unavailable, the whole email is withheld (removing values depends on the model).
 
 ## What the assistant receives, and what it never receives
 

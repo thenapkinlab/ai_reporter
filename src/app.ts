@@ -2,7 +2,8 @@
 // src/platform/lambda.ts wires it to AWS; src/platform/local.ts runs it on your machine.
 
 import { authServerMetadata, identifyAssistant, protectedResourceMetadata, resourceUrl, unauthorized, verifyBearer } from "./auth";
-import type { Config } from "./config";
+import { DEFAULT_LIMITS, type Config } from "./config";
+import { RateLimitedClassifier } from "./limits";
 import type { TokenCipher } from "./crypto";
 import type { Classifier } from "./filter/classifier";
 import type { EngineDeps } from "./filter/engine";
@@ -45,6 +46,10 @@ function sameOrigin(request: Request, url: URL): boolean {
 
 export function createApp(deps: AppDeps) {
   const { config: cfg, accounts } = deps;
+  const limits = cfg.limits ?? DEFAULT_LIMITS;
+  // One shared per-minute budget for the classifier, across all users and Lambda instances.
+  const classifier =
+    deps.classifier && new RateLimitedClassifier(deps.classifier, (m) => accounts.countModelRequest(m), limits.modelRequestsPerMinute);
 
   async function mailboxFor(userId: string): Promise<Mailbox | null> {
     if (cfg.dev && deps.devMailbox) return deps.devMailbox();
@@ -98,12 +103,12 @@ export function createApp(deps: AppDeps) {
         backend = { searchEmail: async () => toolError(msg), readEmail: async () => toolError(msg) };
       } else {
         const engine: EngineDeps = {
-          classifier: deps.classifier,
+          classifier,
           extractText: deps.extractText,
           cache: store.labelCache(),
           policy: await store.policy(cfg.withholdThreshold),
         };
-        backend = new GatewayService(mailbox, engine, store, meta);
+        backend = new GatewayService(mailbox, engine, store, meta, limits);
       }
     } catch (e) {
       console.error("mailbox setup failed", e);
@@ -130,7 +135,8 @@ export function createApp(deps: AppDeps) {
 
     if (path === "/activity" && !isPost) {
       const connected = cfg.dev || !!(await accounts.getGmail(session.uid));
-      return html(activityPage(nav("activity"), await store.totals(), await store.recentRuns(), connected));
+      const usage = { today: await store.usageToday(new Date()), perDay: limits.emailsPerDay };
+      return html(activityPage(nav("activity"), await store.totals(), await store.recentRuns(), connected, usage));
     }
 
     const runMatch = path.match(/^\/runs\/([\w-]+)$/);

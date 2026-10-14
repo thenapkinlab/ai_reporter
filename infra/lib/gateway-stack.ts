@@ -27,6 +27,12 @@ export interface GatewayStackProps extends StackProps {
   extractorModel: string;
   withholdThreshold: string;
   mcpAudience?: string;
+  /** Per-user email limits and the shared classifier budget (requests per minute). */
+  userEmailsPer10Min: string;
+  userEmailsPerDay: string;
+  modelRequestsPerMinute: string;
+  /** Most Lambda instances at once: bounds cost and keeps one user from flooding the account. */
+  maxConcurrency: number;
   /** If set, a $10/month budget emails this address at 80% and 100%. */
   budgetEmail?: string;
 }
@@ -65,6 +71,7 @@ export class GatewayStack extends Stack {
       runtime: lambda.Runtime.NODEJS_24_X,
       architecture: lambda.Architecture.ARM_64,
       memorySize: 1024,
+      reservedConcurrentExecutions: props.maxConcurrency,
       timeout: Duration.seconds(60),
       logGroup,
       environment: {
@@ -77,6 +84,9 @@ export class GatewayStack extends Stack {
         CLASSIFIER_MODEL: props.classifierModel,
         EXTRACTOR_MODEL: props.extractorModel,
         WITHHOLD_THRESHOLD: props.withholdThreshold,
+        USER_EMAILS_PER_10MIN: props.userEmailsPer10Min,
+        USER_EMAILS_PER_DAY: props.userEmailsPerDay,
+        MODEL_REQUESTS_PER_MINUTE: props.modelRequestsPerMinute,
         ...(props.mcpAudience ? { MCP_AUDIENCE: props.mcpAudience } : {}),
       },
       bundling: {

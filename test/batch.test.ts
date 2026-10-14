@@ -53,11 +53,12 @@ describe("batched classification", () => {
     expect(calls).toEqual([3]);
   });
 
-  it("withholds emails the model left unanswered when they look sensitive, and shares harmless ones", async () => {
+  it("withholds every email the model left unanswered (values can't be removed without it)", async () => {
     const emails = [FIXTURE_EMAILS.find((e) => e.id === "fx-lab")!, FIXTURE_EMAILS.find((e) => e.id === "fx-flight")!];
     const { c } = counting((xs) => xs.map(() => null));
     const ds = await processEmails(emails, deps(c));
-    expect(ds.map((d) => d.action)).toEqual(["withheld", "shared"]);
+    expect(ds.map((d) => d.action)).toEqual(["withheld", "withheld"]);
+    expect(ds[1]!.because).toEqual(["unchecked (model unavailable)"]);
   });
 
   it("treats a failed request as unanswered", async () => {

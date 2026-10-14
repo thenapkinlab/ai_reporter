@@ -2,14 +2,22 @@ import { describe, expect, it } from "vitest";
 import { handleMcp, TOOLS } from "../src/mcp";
 import { GatewayService } from "../src/service";
 import { FixtureMailbox } from "../src/fixtures";
-import type { Label } from "../src/filter/classifier";
+import { ModelBusyError, type Classifier, type Label } from "../src/filter/classifier";
+import type { Limits } from "../src/config";
 import type { Decision } from "../src/filter/engine";
 import type { UserStore } from "../src/store/types";
+import { TableAccounts } from "../src/store/single-table";
+import { MemoryTable } from "../src/store/table";
+import { randomKeyB64 } from "../src/crypto";
 
 function fakeStore() {
   const runs: { tool: string; query: string | null; decisions: Decision[] }[] = [];
   const cache = new Map<string, Label>();
+  const real = new TableAccounts(new MemoryTable(), randomKeyB64()).forUser("u1");
   const store = {
+    reserveEmails: real.reserveEmails.bind(real),
+    releaseEmails: real.releaseEmails.bind(real),
+    usageToday: real.usageToday.bind(real),
     recordRun: async (_id: string, meta: { tool: string; query: string | null }, decisions: Decision[]) => {
       runs.push({ tool: meta.tool, query: meta.query, decisions });
     },
@@ -18,20 +26,21 @@ function fakeStore() {
   return { store, runs };
 }
 
-function service() {
+function service(opts: { limits?: Limits; classifier?: Classifier | null } = {}) {
   const { store, runs } = fakeStore();
   const svc = new GatewayService(
     new FixtureMailbox(),
     {
-      classifier: null,
+      classifier: opts.classifier ?? null,
       extractText: async () => null,
       cache: store.labelCache(),
       policy: { withhold: new Set(["medical", "financial"]), threshold: 0.6, releasedMessages: new Set(), releasedSenders: new Set() },
     },
     store,
     { assistant: "claude", clientId: null, userAgent: "test", headerNames: "" },
+    opts.limits,
   );
-  return { svc, runs };
+  return { svc, runs, store };
 }
 
 const rpc = (body: unknown) =>
@@ -97,5 +106,43 @@ describe("MCP endpoint", () => {
     const { svc } = service();
     const res = await handleMcp(rpc({ jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "read_email", arguments: {} } }), svc);
     expect(((await res.json()) as { result: { isError: boolean } }).result.isError).toBe(true);
+  });
+});
+
+describe("usage limits and paging", () => {
+  const search = (svc: GatewayService, args: Record<string, unknown>) =>
+    svc.searchEmail(String(args.query), Number(args.max ?? 25), args.page as string | undefined).then((r) => (r.structuredContent ?? r) as Record<string, unknown>);
+
+  it("pages through results with next_page_token", async () => {
+    const { svc, runs } = service();
+    const first = await search(svc, { query: "", max: 2 });
+    expect(first.next_page_token).toBe("2");
+    await search(svc, { query: "", max: 2, page: first.next_page_token });
+    const ids = runs.map((r) => r.decisions.map((d) => d.messageId));
+    expect(ids[0]).toHaveLength(2);
+    expect(ids[1]).toHaveLength(2);
+    expect(ids[1]).not.toContain(ids[0]![0]);
+  });
+
+  it("checks only what fits in the user's budget, then refuses with a clear message", async () => {
+    const { svc, store } = service({ limits: { emailsPer10Min: 3, emailsPerDay: 500, modelRequestsPerMinute: 18 } });
+    const cut = await search(svc, { query: "", max: 5 });
+    expect((cut.results as unknown[]).length).toBeLessThanOrEqual(3);
+    expect(cut.usage_note).toMatch(/Only 3 of 5/);
+    expect(cut.next_page_token).toBeNull();
+    const refused = await svc.searchEmail("", 5);
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]!.text).toMatch(/10 minutes/);
+    expect(await store.usageToday(new Date())).toBe(3);
+  });
+
+  it("asks the assistant to retry when the shared model budget is full, and gives the emails back", async () => {
+    const busy: Classifier = { classify: async () => { throw new ModelBusyError(); }, classifyBatch: async () => { throw new ModelBusyError(); } };
+    const { svc, store, runs } = service({ classifier: busy });
+    const r = await svc.searchEmail("flight", 5);
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toMatch(/busy/);
+    expect(runs).toHaveLength(0);
+    expect(await store.usageToday(new Date())).toBe(0);
   });
 });

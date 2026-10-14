@@ -13,11 +13,15 @@
 //                                                 be matched to an email without the secret.
 //   USER#<uid>    RELEASE#message#<messageId>     user chose "Release next time"
 //   USER#<uid>    FEEDBACK#<messageId>            release | keep
+//   USER#<uid>    USAGE#10m#<window> / USAGE#day#<date>   emails checked (a number), for usage limits
+//   GLOBAL        MODELRPM#<minute>               classifier requests that minute, across all users
 //
 // Retention through the table's TTL attribute: RUN records (assistant, query, counts) 90 days;
 // ITEM and LABEL records (anything about an individual email) 7 days. No email content, sender,
 // or model-written text is ever stored.
 
+import type { Limits } from "../config";
+import { tenMinuteWindow, utcDay, type Reservation } from "../limits";
 import type { Category, Label } from "../filter/classifier";
 import type { Decision, LabelCache, Policy } from "../filter/engine";
 import type { Item, Table } from "./table";
@@ -55,6 +59,7 @@ function toRunRow(it: Item): RunRow {
 }
 
 const ORDER: Record<RunItemRow["action"], number> = { withheld: 0, redacted: 1, shared: 2 };
+const GLOBAL_PK = "GLOBAL";
 
 class TableUserStore implements UserStore {
   private pk: string;
@@ -200,6 +205,48 @@ class TableUserStore implements UserStore {
     return t;
   }
 
+  private usageKeys(now: Date) {
+    const w = tenMinuteWindow(now);
+    return {
+      window: { key: { pk: this.pk, sk: `USAGE#10m#${w}` }, expiresAt: (w + 1) * 600 + 3600, resetsAt: new Date((w + 1) * 600000) },
+      day: { key: { pk: this.pk, sk: `USAGE#day#${utcDay(now)}` }, expiresAt: expiresAt(now, 2), resetsAt: new Date(`${utcDay(now)}T00:00:00Z`) },
+    };
+  }
+
+  async reserveEmails(n: number, limits: Limits, now: Date): Promise<Reservation> {
+    const k = this.usageKeys(now);
+    k.day.resetsAt.setUTCDate(k.day.resetsAt.getUTCDate() + 1);
+    // Increment first, then check: concurrent requests can't both slip under the limit.
+    const [inWindow, inDay] = await Promise.all([
+      this.table.add(k.window.key, "count", n, k.window.expiresAt),
+      this.table.add(k.day.key, "count", n, k.day.expiresAt),
+    ]);
+    const leftWindow = Math.max(0, n - Math.max(0, inWindow - limits.emailsPer10Min));
+    const leftDay = Math.max(0, n - Math.max(0, inDay - limits.emailsPerDay));
+    const allowed = Math.min(leftWindow, leftDay);
+    if (allowed < n) await this.releaseEmails(n - allowed, now);
+    const limitedBy = allowed === n ? null : leftDay <= leftWindow ? "day" : "10 minutes";
+    return {
+      allowed,
+      limitedBy,
+      resetsAt: limitedBy === "day" ? k.day.resetsAt : limitedBy ? k.window.resetsAt : null,
+      usedToday: inDay - (n - allowed),
+    };
+  }
+
+  async releaseEmails(n: number, now: Date) {
+    if (n <= 0) return;
+    const k = this.usageKeys(now);
+    await Promise.all([
+      this.table.add(k.window.key, "count", -n, k.window.expiresAt),
+      this.table.add(k.day.key, "count", -n, k.day.expiresAt),
+    ]);
+  }
+
+  async usageToday(now: Date) {
+    return Number((await this.table.get(this.usageKeys(now).day.key))?.count ?? 0);
+  }
+
   async feedback(messageId: string, decision: "release" | "keep") {
     await this.table.put({ pk: this.pk, sk: `FEEDBACK#${messageId}`, messageId, decision, at: new Date().toISOString() });
     const releaseKey = { pk: this.pk, sk: `RELEASE#message#${messageId}` };
@@ -222,6 +269,11 @@ export class TableAccounts implements Accounts {
 
   forUser(userId: string): UserStore {
     return new TableUserStore(this.table, userId, this.cacheSecret);
+  }
+
+  async countModelRequest(minute: number) {
+    // Kept for an hour; only the current minute matters.
+    return this.table.add({ pk: GLOBAL_PK, sk: `MODELRPM#${minute}` }, "count", 1, minute * 60 + 3600);
   }
 
   async upsertUser(id: string, email: string) {

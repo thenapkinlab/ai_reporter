@@ -18,9 +18,15 @@ export interface Email {
   attachments: Attachment[];
 }
 
+export interface SearchPage {
+  ids: string[];
+  /** Pass back to get the next page; null when there are no more results. */
+  nextPageToken: string | null;
+}
+
 export interface Mailbox {
-  /** Returns message IDs matching a Gmail search query, newest first. */
-  search(query: string, max: number): Promise<string[]>;
+  /** Returns message IDs matching a Gmail search query, newest first, one page at a time. */
+  search(query: string, max: number, pageToken?: string): Promise<SearchPage>;
   get(id: string): Promise<Email>;
 }
 

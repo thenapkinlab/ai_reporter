@@ -74,6 +74,14 @@ export interface ClassifyInput {
   text: string;
 }
 
+/** The shared model budget is used up: the request should be retried later, not filtered without the model. */
+export class ModelBusyError extends Error {
+  constructor() {
+    super("The privacy filter is busy");
+    this.name = "ModelBusyError";
+  }
+}
+
 export interface Classifier {
   classify(input: ClassifyInput): Promise<Label>;
   /** Labels several emails in one model request. Null where the model gave no usable answer. */

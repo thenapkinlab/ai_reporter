@@ -1,5 +1,7 @@
 // What the app needs from storage, independent of the database behind it.
 
+import type { Limits } from "../config";
+import type { Reservation } from "../limits";
 import type { Category } from "../filter/classifier";
 import type { Decision, LabelCache, Policy } from "../filter/engine";
 
@@ -59,6 +61,12 @@ export interface UserStore {
   totals(days?: number, now?: Date): Promise<Totals>;
   feedback(messageId: string, decision: "release" | "keep"): Promise<void>;
   deleteAll(): Promise<void>;
+  /** Counts `n` emails against the user's limits and says how many may be processed now. */
+  reserveEmails(n: number, limits: Limits, now: Date): Promise<Reservation>;
+  /** Gives back emails reserved but not processed (e.g. the model was busy). */
+  releaseEmails(n: number, now: Date): Promise<void>;
+  /** Emails checked so far today (UTC). */
+  usageToday(now: Date): Promise<number>;
 }
 
 export interface GmailConnection {
@@ -75,6 +83,8 @@ export interface Accounts {
   getGmail(userId: string): Promise<GmailConnection | null>;
   saveGmail(userId: string, address: string, encryptedRefreshToken: string, scope: string): Promise<void>;
   deleteGmail(userId: string): Promise<void>;
+  /** Adds one classifier request to the shared per-minute counter and returns that minute's total. */
+  countModelRequest(minute: number): Promise<number>;
 }
 
 /**

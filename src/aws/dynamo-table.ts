@@ -9,6 +9,7 @@ import {
   GetCommand,
   PutCommand,
   QueryCommand,
+  UpdateCommand,
   type QueryCommandInput,
 } from "@aws-sdk/lib-dynamodb";
 import type { Item, Key, QueryOptions, Table } from "../store/table";
@@ -80,6 +81,20 @@ export class DynamoTable implements Table {
 
   async deleteMany(keys: Key[]): Promise<void> {
     await this.batchWrite(keys.map((Key) => ({ DeleteRequest: { Key } })));
+  }
+
+  async add(key: Key, field: string, by: number, expiresAt: number): Promise<number> {
+    const r = await this.doc.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: key,
+        UpdateExpression: "ADD #f :by SET expiresAt = if_not_exists(expiresAt, :exp)",
+        ExpressionAttributeNames: { "#f": field },
+        ExpressionAttributeValues: { ":by": by, ":exp": expiresAt },
+        ReturnValues: "UPDATED_NEW",
+      }),
+    );
+    return Number(r.Attributes?.[field] ?? 0);
   }
 
   async query(pk: string, opts: QueryOptions = {}): Promise<Item[]> {

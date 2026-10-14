@@ -14,6 +14,30 @@ export interface Config {
   mcpAudience?: string;
   /** Local dev only: test user, synthetic mailbox, "Bearer dev" on /mcp. Never set on Lambda. */
   dev: boolean;
+  /** Usage limits; defaults to DEFAULT_LIMITS. */
+  limits?: Limits;
+}
+
+export interface Limits {
+  /** Emails one user's assistants can have checked per 10 minutes, and per UTC day. */
+  emailsPer10Min: number;
+  emailsPerDay: number;
+  /** Classifier requests per minute across all users (the account's Bedrock quota, minus headroom). */
+  modelRequestsPerMinute: number;
+}
+
+export const DEFAULT_LIMITS: Limits = { emailsPer10Min: 100, emailsPerDay: 500, modelRequestsPerMinute: 18 };
+
+export function parseLimits(env: Record<string, string | undefined>): Limits {
+  const n = (raw: string | undefined, fallback: number) => {
+    const x = Number(raw);
+    return Number.isInteger(x) && x > 0 ? x : fallback;
+  };
+  return {
+    emailsPer10Min: n(env.USER_EMAILS_PER_10MIN, DEFAULT_LIMITS.emailsPer10Min),
+    emailsPerDay: n(env.USER_EMAILS_PER_DAY, DEFAULT_LIMITS.emailsPerDay),
+    modelRequestsPerMinute: n(env.MODEL_REQUESTS_PER_MINUTE, DEFAULT_LIMITS.modelRequestsPerMinute),
+  };
 }
 
 export function parseThreshold(raw: string | undefined): number {
