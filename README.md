@@ -15,17 +15,42 @@ Design doc: https://claude.ai/artifact/ANNBxu1zW94YqFW6ThmRMX
 ```
 Claude / ChatGPT ──MCP + AuthKit token──► Lambda Function URL /mcp ──► Gmail API (read-only)
                                                 │
-                    detectors → signals → classifier (Bedrock) → policy
+                     detectors + batched classifier (Bedrock) → share or withhold
                                                 │
-                    filtered result + filter note ◄── audit log in DynamoDB (labels only)
+                     shared emails + filter note ◄── audit log in DynamoDB (no content)
 ```
 
 - **Tools:** `search_email(query, max_results)` and `read_email(message_id)`, both read-only with explicit annotations.
-- **Filter:** values are redacted everywhere (subject, snippet, body, attachments). Emails labelled medical or
-  financial at ≥ `withholdThreshold` are withheld. PDFs and images are transcribed by a Bedrock model for scanning.
-- **Stored:** message IDs, labels, masked hints (`••••1111`), the assistant's query. **Not stored:** email bodies,
-  subjects, snippets or attachments. Audit records expire after 90 days (DynamoDB TTL).
-- **Gmail tokens:** encrypted with a KMS key, with the user ID as encryption context.
+- **Scope:** only the emails the assistant asks for are fetched and checked (at most 25 per search). The inbox is
+  never scanned in the background.
+- **Decision:** each email is shared unchanged or withheld whole. It is withheld if it is medical or financial, or
+  contains a card number, bank account, government ID, password or key, one-time code, home address or date of
+  birth. Pattern detectors (with checksums) and one batched model call decide together; either one is enough.
+  If the model is unavailable, emails with sensitive hints are withheld.
+
+## What the assistant receives, and what it never receives
+
+| The assistant receives | The assistant never receives |
+|---|---|
+| Shared emails: sender, subject, date, snippet, body, unchanged | **Withheld emails**: no subject, sender, snippet or body, only a count |
+| For shared emails: each attachment's **file name, type and size** | **Attachment contents**, for any email, shared or withheld |
+| A `filter_note` with the number of withheld emails and the reason **types** (e.g. "medical, bank account") | The sensitive **values** themselves, or which withheld email had which reason |
+| For `read_email` on a withheld email: a notice that it was withheld | Anything from emails it didn't ask for |
+
+Attachments are read inside the gateway only to make the decision: PDFs and images are transcribed by a Bedrock
+model, text files are read directly. The extracted text is used during the request and then discarded.
+
+## What we store
+
+| Record | Contents | Kept |
+|---|---|---|
+| Request | Time, assistant, tool, the assistant's query, counts, counts of withhold reasons | 90 days |
+| Per email | Gmail message ID (for "Open in Gmail"), decision, reason types | 7 days |
+| Classifier cache | Gmail message ID, category, confidence, sensitive-item types | 7 days |
+| Gmail connection | Gmail address, refresh token encrypted with KMS (user ID as encryption context) | Until disconnected |
+
+Never stored: email bodies, subjects, senders, snippets, attachments or their text, sensitive values, or the
+model's written reasons.
 
 ## Code layout
 
@@ -166,7 +191,7 @@ The dashboard's Setup page shows the URL and these steps.
 
 ## Known limits (MVP)
 
-- Assistants get attachment names, never attachment contents.
+- Assistants get attachment names, never attachment contents (no `read_attachment` tool yet).
 - "Background, likely" is a heuristic (same assistant, same query, whole-hour rhythm). `userAgent` and `headerNames`
   are stored on each run so chat and scheduled-task requests can be compared and the rule improved.
 - Assistant labels come from the token's client ID and the User-Agent. OpenAI's mTLS client certificate isn't
