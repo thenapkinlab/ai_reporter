@@ -4,6 +4,8 @@
 import { authServerMetadata, identifyAssistant, protectedResourceMetadata, resourceUrl, unauthorized, verifyBearer } from "./auth";
 import { DEFAULT_LIMITS, type Config } from "./config";
 import { RateLimitedClassifier } from "./limits";
+import { countMetric } from "./metrics";
+import { LEAK_TYPES } from "./store/types";
 import type { TokenCipher } from "./crypto";
 import type { Classifier } from "./filter/classifier";
 import type { EngineDeps } from "./filter/engine";
@@ -99,7 +101,7 @@ export function createApp(deps: AppDeps) {
       const mailbox = await mailboxFor(userId);
       if (!mailbox) {
         const msg = `Gmail isn't connected. Ask the user to connect it at ${url.origin}/setup.`;
-        backend = { searchEmail: async () => toolError(msg), readEmail: async () => toolError(msg) };
+        backend = failing(msg, "no_gmail");
       } else {
         const engine: EngineDeps = {
           classifier,
@@ -111,9 +113,18 @@ export function createApp(deps: AppDeps) {
     } catch (e) {
       console.error("mailbox setup failed", e);
       const msg = `Couldn't reach Gmail. Ask the user to reconnect it at ${url.origin}/setup.`;
-      backend = { searchEmail: async () => toolError(msg), readEmail: async () => toolError(msg) };
+      backend = failing(msg, "gmail_unavailable");
     }
     return handleMcp(request, backend);
+  }
+
+  /** A backend whose tools only return `msg`, counted under `outcome`. */
+  function failing(msg: string, outcome: string): ToolBackend {
+    const fail = async (tool: string) => {
+      countMetric("ToolCalls", 1, { Tool: tool, Outcome: outcome });
+      return toolError(msg);
+    };
+    return { searchEmail: () => fail("search_email"), readEmail: () => fail("read_email") };
   }
 
   // ------------------------------------------------------------ dashboard
@@ -159,15 +170,22 @@ export function createApp(deps: AppDeps) {
       const f = await request.formData();
       const runId = String(f.get("run") ?? "");
       const messageId = String(f.get("message") ?? "");
-      const decision = f.get("decision") === "release" ? "release" : "keep";
+      const raw = String(f.get("decision") ?? "");
+      const decision = raw === "release" || raw === "leak" ? raw : "keep";
+      // A leak report names the type of value that got through, from a fixed list.
+      const item = decision === "leak" ? (LEAK_TYPES.includes(String(f.get("item"))) ? String(f.get("item")) : "other") : null;
       const found = await store.run(runId);
       // Only accept feedback on an email that really appears in this user's run.
-      if (found?.items.some((i) => i.message_id === messageId)) await store.feedback(messageId, decision);
+      if (found?.items.some((i) => i.message_id === messageId)) {
+        await store.feedback(messageId, decision, item);
+        countMetric("Feedback", 1, { Kind: decision, Item: item ?? "-" });
+      }
       return redirect(`/runs/${encodeURIComponent(runId)}`);
     }
 
     if (path === "/gmail/connect" && !isPost) {
       if (cfg.dev) return redirect("/setup");
+      countMetric("Funnel", 1, { Step: "gmail_connect_started" });
       const state = await makeState(cfg, "gmail", session.uid);
       return redirect(googleAuthUrl(cfg.googleClientId, `${url.origin}/gmail/callback`, state));
     }
@@ -175,17 +193,23 @@ export function createApp(deps: AppDeps) {
     if (path === "/gmail/callback" && !isPost) {
       const st = await checkState(cfg, url.searchParams.get("state"), "gmail");
       const code = url.searchParams.get("code");
-      if (!st || st.uid !== session.uid || !code)
+      if (!st || st.uid !== session.uid || !code) {
+        countMetric("Funnel", 1, { Step: "gmail_connect_cancelled" });
         return html(messagePage("Gmail not connected", "The Google sign-in didn't complete. Try again from Setup.", nav("setup")), 400);
+      }
       const tokens = await exchangeCode(code, cfg.googleClientId, cfg.googleClientSecret, `${url.origin}/gmail/callback`);
-      if (!tokens.refresh_token || !(tokens.scope ?? "").includes(GMAIL_SCOPE))
+      if (!tokens.refresh_token || !(tokens.scope ?? "").includes(GMAIL_SCOPE)) {
+        countMetric("Funnel", 1, { Step: "gmail_connect_no_access" });
         return html(messagePage("Gmail not connected", "Google didn't grant read access to Gmail. Try again and allow access.", nav("setup")), 400);
+      }
       const address = await gmailAddress(tokens.access_token);
       await accounts.saveGmail(session.uid, address, await deps.cipher.encrypt(tokens.refresh_token, session.uid), tokens.scope ?? GMAIL_SCOPE);
+      countMetric("Funnel", 1, { Step: "gmail_connected" });
       return redirect("/setup");
     }
 
     if (path === "/gmail/disconnect" && isPost) {
+      countMetric("Funnel", 1, { Step: "gmail_disconnected" });
       await disconnectGmail(session.uid);
       return redirect("/setup");
     }
@@ -193,6 +217,7 @@ export function createApp(deps: AppDeps) {
     if (path === "/account/delete" && isPost) {
       const f = await request.formData();
       if (f.get("confirm") !== "on") return redirect("/settings");
+      countMetric("Funnel", 1, { Step: "account_deleted" });
       await disconnectGmail(session.uid);
       await store.deleteAll();
       return html(messagePage("Deleted", "Your data has been deleted and Gmail access revoked.", null), 200, {
@@ -228,6 +253,7 @@ export function createApp(deps: AppDeps) {
         if (!st || !code) return html(messagePage("Sign-in failed", "Please try signing in again.", null), 400);
         const user = await workosAuthenticate(cfg, code);
         await accounts.upsertUser(user.id, user.email);
+        countMetric("Funnel", 1, { Step: "signed_in" });
         const conn = await accounts.getGmail(user.id);
         return redirect(conn ? "/activity" : "/setup", [
           await sessionCookie(cfg, user.id, user.email, url.protocol === "https:"),

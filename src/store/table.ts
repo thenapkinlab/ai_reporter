@@ -26,6 +26,8 @@ export interface Table {
   delete(key: Key): Promise<void>;
   deleteMany(keys: Key[]): Promise<void>;
   query(pk: string, opts?: QueryOptions): Promise<Item[]>;
+  /** Every item in the table. For the nightly totals job only (fine at beta scale). */
+  scan(): Promise<Item[]>;
   /** Atomically adds `by` to a numeric field (creating the item if needed) and returns the new value. */
   add(key: Key, field: string, by: number, expiresAt: number): Promise<number>;
 }
@@ -65,6 +67,10 @@ export class MemoryTable implements Table {
 
   async deleteMany(keys: Key[]) {
     for (const k of keys) await this.delete(k);
+  }
+
+  async scan() {
+    return [...this.items.values()].map((r) => structuredClone(r));
   }
 
   async add(key: Key, field: string, by: number, expiresAt: number) {

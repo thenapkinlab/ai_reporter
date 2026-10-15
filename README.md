@@ -52,8 +52,27 @@ reached" message, and their usage on the dashboard.
 | `agent-gateway-LambdaErrors` | 3+ Lambda errors in 5 minutes |
 | `agent-gateway-LambdaThrottles` | any request refused by the concurrency cap in 5 minutes |
 
-The gateway's metrics are counts only (CloudWatch Embedded Metric Format log lines): no user IDs, queries or
-anything about an email.
+| `agent-gateway-SearchLatency` | `search_email` p95 above 8 s for 15 minutes |
+| `agent-gateway-DailyStatsErrors` | the nightly totals job failed |
+
+## Metrics and the CloudWatch dashboard
+
+The `agent-gateway` dashboard in CloudWatch has three sections. Everything is counts and timings, with
+dimensions from small fixed lists; never a user ID, query, message ID, sender or anything from an email (a test
+checks this).
+
+| Section | Metrics |
+|---|---|
+| Reliability and performance | `ToolCalls` by tool and outcome (ok, limit, busy, error, no_gmail, gmail_unavailable); `TotalMs`, `GmailMs`, `FilterMs` (p50/p95) by tool; `ModelBusy`, `ModelUnavailable`, `UserLimitReached`; Lambda errors, throttles, duration |
+| Filter quality | `Emails` by decision (shared / redacted / withheld) and prompt version; `Reasons` by type; `Feedback` by kind (release / keep / leak) and leaked type |
+| Usage | `Funnel` steps (signed in, Gmail connect started / cancelled / no access / connected, disconnected, account deleted); nightly `Daily` totals: users, Gmail connected, used from an assistant, active 1/7/30 days, week-2 retention, searches, reads, emails by decision, runs by assistant, background runs, feedback |
+
+The nightly job (`src/stats.ts`, 02:00 UTC) works the totals out from records the gateway already keeps and saves
+only the totals (`STATS / DAY#<date>`, 400 days).
+
+**Leak reports:** on a request's page, shared and redacted emails have a "Something leaked" button with a type
+(home address, date of birth, card, bank, ID, password or key, code, other). Only the type is kept, for 7 days.
+Each report becomes a synthetic case in `eval/redaction-set.json`, which the benchmarks then cover.
 - **Decision:** each email is shared unchanged, shared with values removed, or withheld whole.
   - **Withheld whole:** medical or financial emails (removing values from a lab result still leaves a lab result).
   - **Values removed:** in every other email, card numbers, bank accounts, government IDs, passwords and keys,
@@ -87,7 +106,9 @@ to a harmless email doesn't make the email sensitive, because its contents never
 | Record | Contents | Kept |
 |---|---|---|
 | Request | Time, assistant, tool, the assistant's query, counts, counts of withhold reasons | 90 days |
-| Per email | Gmail message ID (for "Open in Gmail"), decision, reason types | 7 days |
+| Per email | Gmail message ID (for "Open in Gmail"), decision, reason types; your feedback (release, keep, or the type of a leaked value) | 7 days |
+| Usage counters | Emails checked per user per 10 minutes and per day (numbers) | 1-2 days |
+| Daily totals | Product totals for the whole service (no per-user data) | 400 days |
 | Classifier cache | Keyed by a secret-keyed hash (HMAC) of the message ID, not the ID itself; category, confidence. Only labels with no sensitive items are cached; emails with values to remove go back to the model each time, because the values themselves are never stored | 7 days |
 | Gmail connection | Gmail address, refresh token encrypted with KMS (user ID as encryption context) | Until disconnected |
 

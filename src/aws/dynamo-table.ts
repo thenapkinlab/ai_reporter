@@ -9,6 +9,7 @@ import {
   GetCommand,
   PutCommand,
   QueryCommand,
+  ScanCommand,
   UpdateCommand,
   type QueryCommandInput,
 } from "@aws-sdk/lib-dynamodb";
@@ -81,6 +82,17 @@ export class DynamoTable implements Table {
 
   async deleteMany(keys: Key[]): Promise<void> {
     await this.batchWrite(keys.map((Key) => ({ DeleteRequest: { Key } })));
+  }
+
+  async scan(): Promise<Item[]> {
+    const out: Item[] = [];
+    let start: Record<string, unknown> | undefined;
+    do {
+      const r = await this.doc.send(new ScanCommand({ TableName: this.tableName, ExclusiveStartKey: start }));
+      out.push(...((r.Items ?? []) as Item[]));
+      start = r.LastEvaluatedKey;
+    } while (start);
+    return out;
   }
 
   async add(key: Key, field: string, by: number, expiresAt: number): Promise<number> {

@@ -176,7 +176,7 @@ class TableUserStore implements UserStore {
     if (!r) return null;
     const rows = await this.table.query(this.pk, { prefix: `ITEM#${runId}#` });
     const fb = await this.table.getMany(rows.map((i) => ({ pk: this.pk, sk: `FEEDBACK#${String(i.messageId)}` })));
-    const feedback = new Map(fb.map((f) => [String(f.messageId), String(f.decision)]));
+    const feedback = new Map(fb.map((f) => [String(f.messageId), f.decision === "leak" ? `reported a leak (${String(f.item ?? "other").replace(/_/g, " ")})` : String(f.decision)]));
     const items: RunItemRow[] = rows
       .map((i) => ({
         message_id: String(i.messageId),
@@ -247,8 +247,13 @@ class TableUserStore implements UserStore {
     return Number((await this.table.get(this.usageKeys(now).day.key))?.count ?? 0);
   }
 
-  async feedback(messageId: string, decision: "release" | "keep") {
-    await this.table.put({ pk: this.pk, sk: `FEEDBACK#${messageId}`, messageId, decision, at: new Date().toISOString() });
+  async feedback(messageId: string, decision: "release" | "keep" | "leak", item: string | null = null) {
+    const now = new Date();
+    // Kept 7 days like everything else about an individual email.
+    await this.table.put({
+      pk: this.pk, sk: `FEEDBACK#${messageId}`, messageId, decision, ...(item ? { item } : {}), at: now.toISOString(), expiresAt: expiresAt(now, EMAIL_DAYS),
+    });
+    if (decision === "leak") return;
     const releaseKey = { pk: this.pk, sk: `RELEASE#message#${messageId}` };
     if (decision === "release") await this.table.put({ ...releaseKey, value: messageId });
     else await this.table.delete(releaseKey);

@@ -28,7 +28,7 @@ h1{font-size:26px;margin:0 0 6px}h2{font-size:19px;margin:28px 0 10px}p{max-widt
 .tile{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
 .tile b{display:block;font-size:28px;font-variant-numeric:tabular-nums}.tile span{color:var(--muted);font-size:13px}
 .chip{display:inline-block;font:12px/1.6 ui-monospace,Menlo,monospace;padding:1px 8px;border-radius:99px;background:var(--chip);color:var(--muted);white-space:nowrap}
-.c-shared{background:var(--ok-bg);color:var(--ok)}.c-withheld{background:var(--stop-bg);color:var(--stop)}.c-redacted{background:var(--warn-bg);color:var(--warn)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.c-shared{background:var(--ok-bg);color:var(--ok)}.c-withheld{background:var(--stop-bg);color:var(--stop)}.c-redacted{background:var(--warn-bg);color:var(--warn)}
 .c-bg{background:var(--accent-soft);color:var(--accent)}
 table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
 th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top;font-size:15px}
@@ -130,6 +130,11 @@ function when(iso: string): string {
   return d.toISOString().replace("T", " ").slice(0, 16) + " UTC";
 }
 
+const LEAK_OPTIONS = [
+  ["home_address", "Home address"], ["date_of_birth", "Date of birth"], ["card_number", "Card number"], ["bank_account", "Bank account"],
+  ["government_id", "ID number"], ["credentials", "Password or key"], ["one_time_code", "One-time code"], ["other", "Something else"],
+].map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+
 const ACTION_LABEL: Record<string, string> = { shared: "shared", redacted: "values removed", withheld: "withheld" };
 
 function runChips(r: RunRow): string {
@@ -201,14 +206,18 @@ export function runPage(nav: Nav, run: RunRow, items: RunItemRow[], gmailAddress
     .map((i) => {
       const actionChip = `<span class="chip c-${esc(i.action)}">${esc(ACTION_LABEL[i.action] ?? i.action)}</span>`;
       const because = i.because ? `<div class="chips">${i.because.split(", ").map((b) => `<span class="chip">${esc(b)}</span>`).join("")}</div>` : `<span class="muted">–</span>`;
-      const fb = i.feedback ? `<span class="muted">You chose: ${esc(i.feedback)}</span>` : "";
+      const fb = i.feedback ? `<span class="muted">You ${i.feedback.startsWith("reported") ? "" : "chose: "}${esc(i.feedback)}</span>` : "";
+      const hidden = `<input type="hidden" name="run" value="${esc(run.id)}"><input type="hidden" name="message" value="${esc(i.message_id)}">`;
+      // Withheld: let the user release it. Shared or redacted: let them report a value that got through.
       const buttons =
-        i.action === "shared"
-          ? ""
-          : `<form class="inline" method="post" action="/feedback">
-               <input type="hidden" name="run" value="${esc(run.id)}"><input type="hidden" name="message" value="${esc(i.message_id)}">
+        i.action === "withheld"
+          ? `<form class="inline" method="post" action="/feedback">${hidden}
                <button class="btn" name="decision" value="release">Release next time</button>
-               <button class="btn" name="decision" value="keep">Keep protected</button></form>`;
+               <button class="btn" name="decision" value="keep">Keep protected</button></form>`
+          : `<form class="inline" method="post" action="/feedback">${hidden}
+               <label class="sr" for="leak-${esc(i.message_id)}">What got through</label>
+               <select name="item" id="leak-${esc(i.message_id)}">${LEAK_OPTIONS}</select>
+               <button class="btn" name="decision" value="leak">Something leaked</button></form>`;
       return `<tr><td>${actionChip}</td><td>${because}</td>
         <td><a href="${esc(gmailLink(i.message_id, gmailAddress))}" target="_blank" rel="noopener">Open in Gmail ↗</a></td>
         <td><div class="row">${buttons}${fb}</div></td></tr>`;
@@ -222,7 +231,9 @@ export function runPage(nav: Nav, run: RunRow, items: RunItemRow[], gmailAddress
     `<p><a href="/activity">← Activity</a></p>
      <h1>${esc(ASSISTANT[run.assistant] ?? run.assistant)} · ${esc(run.tool)}</h1>
      <p class="muted">${esc(when(run.created_at))} · asked for “${esc(run.query ?? "")}” · ${runChips(run)}</p>
-     <p class="muted">"Open in Gmail" opens the email in your own Gmail. We don't store or fetch its subject or content.</p>
+     <p class="muted">"Open in Gmail" opens the email in your own Gmail. We don't store or fetch its subject or content.
+     If you see a value that should have been removed, pick its type and press "Something leaked": we record only the type,
+     never the value, and use it to improve the filter.</p>
      ${body}`,
     nav,
   );

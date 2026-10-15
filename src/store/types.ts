@@ -38,6 +38,9 @@ export interface RunItemRow {
   feedback: string | null;
 }
 
+/** What a user can report as leaked: the sensitive item types, plus "other". */
+export const LEAK_TYPES = ["home_address", "date_of_birth", "card_number", "bank_account", "government_id", "credentials", "one_time_code", "other"];
+
 export interface Totals {
   read: number;
   redacted: number;
@@ -59,7 +62,8 @@ export interface UserStore {
   recentRuns(limit?: number): Promise<RunRow[]>;
   run(runId: string): Promise<{ run: RunRow; items: RunItemRow[] } | null>;
   totals(days?: number, now?: Date): Promise<Totals>;
-  feedback(messageId: string, decision: "release" | "keep"): Promise<void>;
+  /** "leak" reports a value that reached the assistant; `item` is one of LEAK_TYPES. */
+  feedback(messageId: string, decision: "release" | "keep" | "leak", item?: string | null): Promise<void>;
   deleteAll(): Promise<void>;
   /** Counts `n` emails against the user's limits and says how many may be processed now. */
   reserveEmails(n: number, limits: Limits, now: Date): Promise<Reservation>;
