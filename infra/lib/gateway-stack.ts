@@ -1,12 +1,11 @@
 // Everything the gateway needs on AWS, as one CloudFormation stack:
 // a DynamoDB table, a KMS key, the Lambda function with a public HTTPS URL,
-// least-privilege permissions, a log group, CloudWatch alarms for the operator, and an
-// optional monthly budget alert.
+// least-privilege permissions, a log group, CloudWatch alarms and a dashboard for the operator,
+// and the nightly totals job. The budget alert is set up separately (scripts/budget.sh).
 
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
-import * as budgets from "aws-cdk-lib/aws-budgets";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cwActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as sns from "aws-cdk-lib/aws-sns";
@@ -39,7 +38,7 @@ export interface GatewayStackProps extends StackProps {
   modelRequestsPerMinute: string;
   /** Most Lambda instances at once: bounds cost and keeps one user from flooding the account. */
   maxConcurrency: number;
-  /** If set, a $10/month budget emails this address at 80% and 100%. */
+  /** Used as the alarm address when alarmEmail isn't set (the budget itself: scripts/budget.sh). */
   budgetEmail?: string;
   /** Where CloudWatch alarms are emailed (the operator, never users). Falls back to budgetEmail. */
   alarmEmail?: string;
@@ -264,20 +263,8 @@ export class GatewayStack extends Stack {
       ],
     });
 
-    if (props.budgetEmail) {
-      new budgets.CfnBudget(this, "MonthlyBudget", {
-        budget: {
-          budgetName: "agent-gateway-monthly",
-          budgetType: "COST",
-          timeUnit: "MONTHLY",
-          budgetLimit: { amount: 10, unit: "USD" },
-        },
-        notificationsWithSubscribers: [80, 100].map((threshold) => ({
-          notification: { notificationType: "ACTUAL", comparisonOperator: "GREATER_THAN", threshold, thresholdType: "PERCENTAGE" },
-          subscribers: [{ subscriptionType: "EMAIL", address: props.budgetEmail! }],
-        })),
-      });
-    }
+    // The $10/month budget alert is created outside this stack (`npm run budget`): CloudFormation
+    // doesn't support AWS::Budgets::Budget in every region (eu-north-1 included).
 
     new CfnOutput(this, "GatewayUrl", { value: fnUrl.url, description: "Dashboard (sign in here)" });
     new CfnOutput(this, "McpUrl", { value: `${fnUrl.url}mcp`, description: "Paste into Claude or ChatGPT" });

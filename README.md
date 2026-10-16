@@ -217,8 +217,9 @@ MTSamples' original terms are unclear, so it's for internal benchmarking only an
 
 ### 1. AWS account and CLI
 
-1. Create an AWS account. **Set up a budget alert first** (Billing → Budgets), or pass `-c budgetEmail=you@example.com`
-   on deploy and the stack creates a $10/month alert.
+1. Create an AWS account. **Set up a budget alert first:** `npm run budget -- you@example.com 10` creates a
+   $10/month cost budget that emails you at 80% and 100% of actual spend (it only warns; it never stops anything).
+   It's a script rather than part of the stack because CloudFormation doesn't support budgets in every region.
 2. Install the AWS CLI and sign in: `aws configure sso` (recommended) or `aws configure` with an IAM user's keys.
    The stack deploys to `region` in `cdk.json` (default `eu-north-1`, Stockholm). New free-plan accounts can
    only use the region they were created in.
@@ -257,7 +258,7 @@ aws ssm put-parameter --region eu-north-1 --type SecureString --name /agent-gate
 ### 5. Deploy
 
 ```bash
-npm run deploy                                   # or: npx cdk deploy -c budgetEmail=you@example.com
+npm run deploy                                   # alarms go to alarmEmail in cdk.json
 ```
 
 The output shows `GatewayUrl` (the dashboard) and `McpUrl` (paste into assistants). Add the two redirect URIs above,
