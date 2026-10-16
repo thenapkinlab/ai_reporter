@@ -13,7 +13,8 @@
     "eval:import": "tsx eval/import.ts",
     "eval:redaction": "tsx eval/redaction.ts",
     "eval:redactor": "tsx eval/redactor.ts",
-    "budget": "bash scripts/budget.sh"
+    "budget": "bash scripts/budget.sh",
+    "testers": "tsx scripts/testers.ts"
   },
   "type": "module",
   "dependencies": {

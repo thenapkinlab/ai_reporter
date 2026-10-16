@@ -87,6 +87,15 @@ export interface Accounts {
   getGmail(userId: string): Promise<GmailConnection | null>;
   saveGmail(userId: string, address: string, encryptedRefreshToken: string, scope: string): Promise<void>;
   deleteGmail(userId: string): Promise<void>;
+  /** Tester allow list (lower-cased emails). */
+  isAllowed(email: string): Promise<boolean>;
+  allow(email: string): Promise<void>;
+  disallow(email: string): Promise<void>;
+  allowed(): Promise<string[]>;
+  /** The email stored with the user's profile, if any. */
+  profileEmail(userId: string): Promise<string | null>;
+  /** Records when the user accepted the beta notice. */
+  acceptNotice(userId: string, at: Date): Promise<void>;
   /** Adds one classifier request to the shared per-minute counter and returns that minute's total. */
   countModelRequest(minute: number): Promise<number>;
 }

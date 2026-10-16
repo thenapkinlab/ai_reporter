@@ -13,9 +13,9 @@ import { GMAIL_SCOPE, GmailMailbox, exchangeCode, gmailAddress, googleAuthUrl, r
 import type { Mailbox } from "./mail";
 import { handleMcp, toolError, type ToolBackend } from "./mcp";
 import { GatewayService } from "./service";
-import { checkState, clearSessionCookie, makeState, readSession, sessionCookie, workosAuthenticate, workosAuthorizeUrl, type Session } from "./session";
+import { checkState, clearSessionCookie, makeState, readSession, sessionCookie, workosAuthenticate, workosAuthorizeUrl, workosUserEmail, type Session } from "./session";
 import type { Accounts } from "./store/types";
-import { activityPage, devLoginPage, html, landingPage, messagePage, runPage, settingsPage, setupPage, type Nav } from "./dashboard/pages";
+import { activityPage, guidePage, noticePage, notInvitedPage, devLoginPage, html, landingPage, messagePage, runPage, settingsPage, setupPage, type Nav } from "./dashboard/pages";
 
 export interface AppDeps {
   config: Config;
@@ -48,6 +48,8 @@ function sameOrigin(request: Request, url: URL): boolean {
 export function createApp(deps: AppDeps) {
   const { config: cfg, accounts } = deps;
   const limits = cfg.limits ?? DEFAULT_LIMITS;
+  const inviteOnly = !cfg.dev && cfg.inviteOnly !== false;
+  const contactLine = cfg.contactEmail ? `To join, email ${cfg.contactEmail}.` : "Ask the person running the beta to add you.";
   // One shared per-minute budget for the classifier, across all users and Lambda instances.
   const classifier =
     deps.classifier && new RateLimitedClassifier(deps.classifier, (m) => accounts.countModelRequest(m), limits.modelRequestsPerMinute);
@@ -88,7 +90,12 @@ export function createApp(deps: AppDeps) {
       if ("error" in caller) return unauthorized(url.origin, caller.error);
       userId = caller.userId;
       clientId = caller.clientId;
-      await accounts.ensureUser(userId, String(caller.claims.email ?? ""));
+      // Invite-only beta: find the caller's email (token, our profile, or WorkOS) before anything is stored.
+      const email = String(caller.claims.email ?? "") || (await accounts.profileEmail(userId)) || (await workosUserEmail(cfg, userId)) || "";
+      if (inviteOnly && !(await accounts.isAllowed(email))) {
+        return handleMcp(request, failing(`This is an invite-only beta and ${email || "this account"} isn't on the tester list. ${contactLine}`, "not_invited"));
+      }
+      await accounts.ensureUser(userId, email);
     }
 
     const store = accounts.forUser(userId);
@@ -184,6 +191,9 @@ export function createApp(deps: AppDeps) {
     }
 
     if (path === "/gmail/connect" && !isPost) {
+      // The beta notice must be accepted (checkbox on Setup) before Gmail is connected.
+      if (url.searchParams.get("ack") !== "1") return redirect("/setup");
+      await accounts.acceptNotice(session.uid, new Date());
       if (cfg.dev) return redirect("/setup");
       countMetric("Funnel", 1, { Step: "gmail_connect_started" });
       const state = await makeState(cfg, "gmail", session.uid);
@@ -252,6 +262,10 @@ export function createApp(deps: AppDeps) {
         const code = url.searchParams.get("code");
         if (!st || !code) return html(messagePage("Sign-in failed", "Please try signing in again.", null), 400);
         const user = await workosAuthenticate(cfg, code);
+        if (inviteOnly && !(await accounts.isAllowed(user.email))) {
+          countMetric("Funnel", 1, { Step: "not_invited" });
+          return html(notInvitedPage(user.email, cfg.contactEmail ?? null), 403);
+        }
         await accounts.upsertUser(user.id, user.email);
         countMetric("Funnel", 1, { Step: "signed_in" });
         const conn = await accounts.getGmail(user.id);
@@ -260,10 +274,15 @@ export function createApp(deps: AppDeps) {
         ]);
       }
       if (path === "/logout" && request.method === "POST") return redirect("/", [clearSessionCookie()]);
+      if (path === "/guide") return html(guidePage(resourceUrl(url.origin), cfg.contactEmail ?? null));
+      if (path === "/notice") return html(noticePage(cfg.contactEmail ?? null));
 
       const session = await readSession(request, cfg);
       if (path === "/") return session ? redirect("/activity") : html(landingPage(cfg.dev));
       if (!session) return redirect("/");
+      // Someone removed from the list loses access on their next request.
+      if (inviteOnly && !(await accounts.isAllowed(session.email)))
+        return html(notInvitedPage(session.email, cfg.contactEmail ?? null), 403, { "set-cookie": clearSessionCookie() });
       return await dashboard(request, url, session);
     } catch (e) {
       console.error(e);

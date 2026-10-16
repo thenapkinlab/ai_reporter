@@ -40,6 +40,9 @@ export interface GatewayStackProps extends StackProps {
   maxConcurrency: number;
   /** Used as the alarm address when alarmEmail isn't set (the budget itself: scripts/budget.sh). */
   budgetEmail?: string;
+  /** Invite-only beta (tester allow list) and the contact shown on the notice and guide. */
+  inviteOnly: boolean;
+  contactEmail?: string;
   /** Where CloudWatch alarms are emailed (the operator, never users). Falls back to budgetEmail. */
   alarmEmail?: string;
 }
@@ -95,6 +98,8 @@ export class GatewayStack extends Stack {
         USER_EMAILS_PER_10MIN: props.userEmailsPer10Min,
         USER_EMAILS_PER_DAY: props.userEmailsPerDay,
         MODEL_REQUESTS_PER_MINUTE: props.modelRequestsPerMinute,
+        INVITE_ONLY: String(props.inviteOnly),
+        ...(props.contactEmail ? { CONTACT_EMAIL: props.contactEmail } : {}),
         ...(props.mcpAudience ? { MCP_AUDIENCE: props.mcpAudience } : {}),
       },
       bundling: {

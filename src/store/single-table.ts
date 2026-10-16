@@ -15,6 +15,7 @@
 //   USER#<uid>    FEEDBACK#<messageId>            release | keep
 //   USER#<uid>    USAGE#10m#<window> / USAGE#day#<date>   emails checked (a number), for usage limits
 //   GLOBAL        MODELRPM#<minute>               classifier requests that minute, across all users
+//   ALLOW         EMAIL#<email>                   tester allow list (invite-only beta)
 //
 // Retention through the table's TTL attribute: RUN records (assistant, query, counts) 90 days;
 // ITEM and LABEL records (anything about an individual email) 7 days. No email content, sender,
@@ -60,6 +61,7 @@ function toRunRow(it: Item): RunRow {
 
 const ORDER: Record<RunItemRow["action"], number> = { withheld: 0, redacted: 1, shared: 2 };
 const GLOBAL_PK = "GLOBAL";
+const ALLOW_PK = "ALLOW";
 
 class TableUserStore implements UserStore {
   private pk: string;
@@ -274,6 +276,33 @@ export class TableAccounts implements Accounts {
 
   forUser(userId: string): UserStore {
     return new TableUserStore(this.table, userId, this.cacheSecret);
+  }
+
+  async isAllowed(email: string) {
+    if (!email) return false;
+    return !!(await this.table.get({ pk: ALLOW_PK, sk: `EMAIL#${email.trim().toLowerCase()}` }));
+  }
+
+  async allow(email: string) {
+    await this.table.put({ pk: ALLOW_PK, sk: `EMAIL#${email.trim().toLowerCase()}`, addedAt: new Date().toISOString() });
+  }
+
+  async disallow(email: string) {
+    await this.table.delete({ pk: ALLOW_PK, sk: `EMAIL#${email.trim().toLowerCase()}` });
+  }
+
+  async allowed() {
+    return (await this.table.query(ALLOW_PK, { prefix: "EMAIL#" })).map((r) => r.sk.slice(6));
+  }
+
+  async profileEmail(userId: string) {
+    const p = await this.table.get({ pk: pkFor(userId), sk: "PROFILE" });
+    return (p?.email as string | undefined) || null;
+  }
+
+  async acceptNotice(userId: string, at: Date) {
+    const p = await this.table.get({ pk: pkFor(userId), sk: "PROFILE" });
+    if (p) await this.table.put({ ...p, noticeAcceptedAt: at.toISOString() });
   }
 
   async countModelRequest(minute: number) {

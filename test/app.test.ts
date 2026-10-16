@@ -115,3 +115,32 @@ describe("Lambda Function URL adapter", () => {
     expect(out.headers).toEqual({ location: "/x" });
   });
 });
+
+describe("invite-only beta", () => {
+  it("serves the guide and notice without signing in", async () => {
+    const app = devApp(false);
+    const guide = await app.handle(new Request(`${ORIGIN}/guide`));
+    expect(guide.status).toBe(200);
+    expect(await guide.text()).toContain(`${ORIGIN}/mcp`);
+    expect((await app.handle(new Request(`${ORIGIN}/notice`))).status).toBe(200);
+  });
+
+  it("keeps an allow list of lower-cased emails", async () => {
+    const accounts = new TableAccounts(new MemoryTable(), randomKeyB64());
+    await accounts.allow("Tester@Example.com ");
+    expect(await accounts.isAllowed("tester@example.com")).toBe(true);
+    expect(await accounts.isAllowed("TESTER@example.com")).toBe(true);
+    expect(await accounts.isAllowed("someone@else.com")).toBe(false);
+    expect(await accounts.isAllowed("")).toBe(false);
+    await accounts.disallow("tester@example.com");
+    expect(await accounts.allowed()).toEqual([]);
+  });
+
+  it("requires the beta notice before connecting Gmail", async () => {
+    const app = devApp();
+    const cookie = await signIn(app);
+    const noAck = await app.handle(new Request(`${ORIGIN}/gmail/connect`, { headers: { cookie } }));
+    expect(noAck.headers.get("location")).toBe("/setup");
+  });
+});
+

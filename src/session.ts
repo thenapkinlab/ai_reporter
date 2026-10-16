@@ -39,6 +39,16 @@ export async function workosAuthenticate(cfg: Config, code: string): Promise<{ i
   return json.user;
 }
 
+/** A WorkOS user's email, for MCP tokens that don't carry it. */
+export async function workosUserEmail(cfg: Config, userId: string): Promise<string | null> {
+  const res = await fetch(`https://api.workos.com/user_management/users/${encodeURIComponent(userId)}`, {
+    headers: { authorization: `Bearer ${cfg.workosApiKey}` },
+  });
+  if (!res.ok) return null;
+  const json = (await res.json()) as { email?: string };
+  return json.email ?? null;
+}
+
 export async function sessionCookie(cfg: Config, uid: string, email: string, secure: boolean): Promise<string> {
   const token = await signPayload({ uid, email, exp: Date.now() + SESSION_HOURS * 3600_000 }, cfg.sessionSecret);
   return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_HOURS * 3600}${secure ? "; Secure" : ""}`;

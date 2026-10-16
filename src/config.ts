@@ -16,6 +16,10 @@ export interface Config {
   dev: boolean;
   /** Usage limits; defaults to DEFAULT_LIMITS. */
   limits?: Limits;
+  /** Only emails on the tester allow list can sign in or use the connector (`npm run testers`). */
+  inviteOnly?: boolean;
+  /** Where testers can reach the person running the beta (shown on the notice and guide). */
+  contactEmail?: string;
 }
 
 export interface Limits {

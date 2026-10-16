@@ -28,4 +28,6 @@ new GatewayStack(app, "AgentGateway", {
   mcpAudience: (app.node.tryGetContext("mcpAudience") as string | undefined) || undefined,
   budgetEmail: (app.node.tryGetContext("budgetEmail") as string | undefined) || undefined,
   alarmEmail: (app.node.tryGetContext("alarmEmail") as string | undefined) || undefined,
+  inviteOnly: ctx("inviteOnly", "true") !== "false",
+  contactEmail: (app.node.tryGetContext("contactEmail") as string | undefined) || undefined,
 });

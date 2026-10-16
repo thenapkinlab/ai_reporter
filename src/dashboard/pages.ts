@@ -72,7 +72,122 @@ export function landingPage(dev: boolean): string {
      <p class="muted">Private Gmail sits between Claude or ChatGPT and your inbox. It holds back medical and financial
      emails, hides values like card numbers, and shows you every email your assistant read.</p>
      <p><a class="btn primary" href="/login">Sign in</a></p>
+     <div class="notice">Invite-only beta. This is a personal, experimental project. Read the <a href="/notice">beta notice</a>
+     and the <a href="/guide">tester guide</a> before you connect Gmail.</div>
      ${dev ? `<p class="muted">Dev mode is on: sign-in uses a local test user and a synthetic mailbox.</p>` : ""}`,
+    null,
+  );
+}
+
+const contact = (email: string | null) =>
+  email ? `<a href="mailto:${esc(email)}">${esc(email)}</a>` : "the person who invited you";
+
+export function notInvitedPage(email: string, contactEmail: string | null): string {
+  return layout(
+    "Invite only",
+    `<h1>This beta is invite-only</h1>
+     <p>${email ? `<b>${esc(email)}</b> isn't on the tester list yet.` : "Your account isn't on the tester list yet."}
+     To join, contact ${contact(contactEmail)} with the email address you sign in with and the Gmail address you'd connect.</p>
+     <p class="muted">Nothing about you was stored.</p>
+     <p><a href="/guide">Read the tester guide</a></p>`,
+    null,
+  );
+}
+
+export function noticePage(contactEmail: string | null): string {
+  return layout(
+    "Beta notice",
+    `<h1>Beta notice</h1>
+     <p>Please read this before you connect Gmail. It's short, and it's the whole deal.</p>
+
+     <h2>What this is</h2>
+     <p>A personal, experimental project run by one person in their own time. It isn't a company product, it comes with no
+     guarantees, and it may change or shut down. Contact: ${contact(contactEmail)}.</p>
+
+     <h2>What happens when your assistant reads email</h2>
+     <ul>
+       <li>Only the emails your assistant (Claude or ChatGPT) asks for are fetched from Gmail, read-only. Your inbox is never scanned in the background.</li>
+       <li>Medical and financial emails (lab results, bank statements, payslips…) are withheld completely.</li>
+       <li>In other emails, card and bank numbers, ID numbers, passwords and keys, one-time codes, home addresses and dates of birth are
+       replaced with <code>[removed: …]</code>.</li>
+       <li>Attachments are never opened or sent. The assistant only sees their names.</li>
+       <li>Everything that isn't withheld or removed goes to your assistant and is handled under that assistant's own terms.</li>
+     </ul>
+
+     <h2>The filter can make mistakes</h2>
+     <p>In testing it removes about 96 to 100% of sensitive values and withholds about 96% of medical and financial emails, so it
+     sometimes misses one. Don't connect an inbox where a single slip would be serious. If you see something that should have been
+     removed, press "Something leaked" on your dashboard.</p>
+
+     <h2>What is stored, and for how long</h2>
+     <ul>
+       <li>Your sign-in email, your Gmail address, and your Gmail access token (encrypted). Until you disconnect or delete your account.</li>
+       <li>For each request: time, which assistant, the search your assistant ran (for example "flight newer_than:2m"), and counts. 90 days.
+       Note that a search can itself say something about you.</li>
+       <li>For each email: its Gmail ID (for "Open in Gmail"), the decision, the reason types, and your feedback. 7 days.</li>
+       <li>Usage counters and service-wide daily totals with no personal data.</li>
+       <li><b>Never stored:</b> email bodies, subjects, senders, attachments, or the sensitive values themselves.</li>
+     </ul>
+
+     <h2>Where, and who's involved</h2>
+     <p>The service runs on Amazon Web Services in Stockholm (EU), and the filter's AI model runs on Amazon Bedrock in EU regions.
+     Sign-in uses WorkOS. Gmail access uses Google's API. Only you see your dashboard. The person running the beta can technically
+     access the stored records above to operate the service, but never email content, because it isn't kept.</p>
+
+     <h2>Leaving</h2>
+     <p>Disconnect Gmail on Setup, or delete everything in Settings → "Delete my data", which also revokes our Google access. You can
+     also remove access in your Google Account → Security → Third-party connections.</p>`,
+    null,
+  );
+}
+
+export function guidePage(mcpUrl: string, contactEmail: string | null): string {
+  return layout(
+    "Tester guide",
+    `<h1>Tester guide</h1>
+     <p>Thanks for testing! This gateway sits between your AI assistant and Gmail: it holds back medical and financial emails, removes
+     sensitive values from the rest, and shows you everything your assistant read. Setup takes about 5 minutes.</p>
+
+     <h2>Before you start</h2>
+     <ul>
+       <li>A Gmail account, and Claude or ChatGPT (ChatGPT needs Plus or higher and Developer Mode for custom connectors).</li>
+       <li>An invite: send ${contact(contactEmail)} the email you'll sign in with and the Gmail address you'll connect.
+       Wait for a confirmation before setting up; Google blocks addresses that haven't been added yet.</li>
+       <li>Read the <a href="/notice">beta notice</a>.</li>
+     </ul>
+
+     <h2>Setup</h2>
+     <ol>
+       <li><b>Sign in</b> on the <a href="/">home page</a> with your invited email.</li>
+       <li><b>Connect Gmail</b> on the Setup page. Google will warn that it "hasn't verified this app": choose
+       <b>Advanced → Go to … (unsafe)</b> and allow read-only access. That's expected for a small beta.</li>
+       <li><b>Add the connector</b> to your assistant with this URL: <code>${esc(mcpUrl)}</code>. The Setup page has step-by-step
+       instructions for Claude and ChatGPT. Sign in with the same account when your assistant asks.</li>
+       <li><b>Turn off your assistant's built-in Gmail connector.</b> Otherwise it can read your email without going through the filter.</li>
+     </ol>
+
+     <h2>Try it</h2>
+     <ul>
+       <li>"When is my next flight?" or "Find my hotel bookings from the last 2 months."</li>
+       <li>"Where are my recent orders?" Delivery addresses should show as <code>[removed: home address]</code>.</li>
+       <li>"Show my latest bank statement." It should be withheld.</li>
+       <li>Ask about newsletters, receipts, meetings: anything you'd normally ask.</li>
+     </ul>
+
+     <h2>Tell us what happens</h2>
+     <ul>
+       <li><b>Activity</b> shows every request and every email your assistant read, with "Open in Gmail" to compare.</li>
+       <li>If something sensitive got through: <b>Something leaked</b>, and pick what it was. Only the type is recorded.</li>
+       <li>If something was withheld that shouldn't have been: <b>Release next time</b>.</li>
+       <li>Anything else (confusing steps, slow answers, ideas): email ${contact(contactEmail)}.</li>
+     </ul>
+
+     <h2>Good to know</h2>
+     <ul>
+       <li>Limits: 100 emails per 10 minutes and 500 per day. If the filter is busy, your assistant will say so; try again in a minute.</li>
+       <li>Attachment contents are never shared, only their names.</li>
+       <li>Delete everything any time in Settings.</li>
+     </ul>`,
     null,
   );
 }
@@ -95,7 +210,11 @@ export function setupPage(
     ? `<div class="card"><b>Gmail connected:</b> ${esc(gmail.address)}
          <form class="inline" method="post" action="/gmail/disconnect"><button class="btn">Disconnect</button></form></div>`
     : `<div class="card"><b>Step 1. Connect Gmail.</b> Read-only access through Google's own sign-in screen. We never see your password.
-         <p><a class="btn primary" href="/gmail/connect">Connect Gmail</a></p></div>`;
+         <form method="get" action="/gmail/connect">
+           <p><label class="row"><input type="checkbox" name="ack" value="1" required> I've read the <a href="/notice" target="_blank" rel="noopener">beta notice</a>: what's read, what's stored, and that the filter can make mistakes.</label></p>
+           <p><button class="btn primary">Connect Gmail</button></p>
+         </form>
+         <p class="muted">Google will say it "hasn't verified this app". That's expected for a small beta: choose <b>Advanced → Go to … (unsafe)</b>, then allow read-only access.</p></div>`;
   return layout(
     "Setup",
     `<h1>Setup</h1>

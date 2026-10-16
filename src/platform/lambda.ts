@@ -29,6 +29,8 @@ async function build() {
     withholdThreshold: parseThreshold(env.WITHHOLD_THRESHOLD),
     mcpAudience: env.MCP_AUDIENCE || undefined,
     limits: parseLimits(env),
+    inviteOnly: env.INVITE_ONLY !== "false",
+    contactEmail: env.CONTACT_EMAIL || undefined,
     dev: false, // never on Lambda
   };
   // Bedrock can run in a different region from the rest of the stack.

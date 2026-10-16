@@ -25,6 +25,22 @@ Claude / ChatGPT ──MCP + AuthKit token──► Lambda Function URL /mcp ─
   passed unchanged to the Gmail API (`q`), so Gmail does the filtering; at most 25 results per page, with
   `page_token` for the next page. The inbox is never scanned in the background.
 
+## Invite-only beta
+
+Only emails on the tester allow list can sign in to the dashboard or use the connector; anyone else sees an
+"invite-only" page and nothing about them is stored. Removing someone takes effect on their next request.
+
+```bash
+npm run testers -- add tester@example.com     # also add their Gmail address as a Google test user
+npm run testers -- list
+npm run testers -- remove tester@example.com
+```
+
+Send testers `/guide` (setup steps, what to try, how to report problems). `/notice` is the beta notice: what's
+read, what's stored and for how long, where it runs, and how to leave. Testers must tick that they've read it
+before connecting Gmail; the time they accepted is kept on their profile. `inviteOnly` and `contactEmail` are in
+`cdk.json`.
+
 ## Usage limits
 
 | Limit | Default | When it's reached |
