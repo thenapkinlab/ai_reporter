@@ -215,6 +215,21 @@ With `--gretel`, Gretel's labelled values (IDs, card and bank numbers, credentia
 addresses) give value recall per label on public documents. Gretel labels business addresses too, so address
 recall there is an upper bound.
 
+### Dev, validation and test splits
+
+`npm run eval:import -- --holdout` builds three disjoint samples of the public data (duplicate texts removed):
+
+| Split | Command | Use it for |
+|---|---|---|
+| dev | `npm run eval -- --external --docs 300` | Reading individual mistakes and changing prompts or detectors. Includes the hand-written cases. |
+| validation | `npm run eval -- --holdout --docs 252` | Comparing versions on totals only. Don't read its individual mistakes, or it turns into a second dev set. |
+| test | `npm run eval -- --test --docs 252` | Locked: run once to confirm a version you've already chosen on validation. |
+
+Reports give 95% confidence intervals; treat differences inside them as noise and re-run before believing them.
+Public labels that a person reviewed and found wrong (URLs, protocol fields, amounts, placeholders) are listed in
+`eval/label-review.json` and skipped; review only on dev. The runner retries unanswered emails once, like the
+gateway.
+
 ### Public datasets
 
 ```bash

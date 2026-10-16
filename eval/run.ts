@@ -41,6 +41,8 @@ interface Run {
   inputTokens: number;
   outputTokens: number;
   failures: number;
+  /** Follow-up requests for emails a batch left unanswered. */
+  retries: number;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -48,7 +50,7 @@ const isThrottle = (e: unknown) => /throttl|too many requests|rate exceeded/i.te
 
 /** Sends batches one after another, at most `rpm` requests per minute, retrying throttled requests. */
 async function runModel(model: string, prepared: Prepared[], client: BedrockRuntimeClient, batch: number, rpm: number): Promise<Run> {
-  const run: Run = { name: model, rulesOnly: false, answers: new Map(), inputTokens: 0, outputTokens: 0, failures: 0 };
+  const run: Run = { name: model, rulesOnly: false, answers: new Map(), inputTokens: 0, outputTokens: 0, failures: 0, retries: 0 };
   const gapMs = Math.ceil(60000 / rpm);
   let lastStart = 0;
   for (let start = 0; start < prepared.length; start += batch) {
@@ -72,6 +74,21 @@ async function runModel(model: string, prepared: Prepared[], client: BedrockRunt
         error = e instanceof Error ? e.message : String(e);
         if (!isThrottle(e)) break;
         await sleep(gapMs * 2 ** attempt);
+      }
+    }
+    // Like the gateway: one follow-up request for any emails left unanswered.
+    const missing = (labels ?? chunk.map(() => null)).flatMap((l, j) => (l ? [] : [j]));
+    if (labels && missing.length) {
+      const wait = lastStart + gapMs - Date.now();
+      if (wait > 0) await sleep(wait);
+      lastStart = Date.now();
+      try {
+        const sub = missing.map((j) => inputs[j]!);
+        const retry = sub.length > 1 ? await classifier.classifyBatch(sub) : [await classifier.classify(sub[0]!)];
+        missing.forEach((j, k) => (labels![j] = retry[k] ?? null));
+        run.retries++;
+      } catch {
+        // Still unanswered: withheld, as in the gateway.
       }
     }
     const latency = (last as CallInfo | null)?.latencyMs ?? null;
@@ -117,7 +134,7 @@ function report(runs: Run[], prepared: Prepared[], threshold: number): string {
     const lat = o.map((x) => x.latencyMs).filter((x): x is number => x !== null);
     const p50 = percentile(lat, 0.5), p95 = percentile(lat, 0.95);
     lines.push(
-      `| ${r.name} | ${pct(s.recall)} ${ci(s.tp, s.tp + s.fn)} | ${pct(s.precision)} | ${pct(s.fpr)} ${ci(s.fp, s.fp + s.tn)} | ${pct(s.categoryAccuracy)} | ${r.rulesOnly ? "–" : `${pct(r.failures / prepared.length)} (${r.failures})`} | ${p50 === null ? "–" : `${p50} / ${p95} ms`} | ${r.inputTokens} / ${r.outputTokens} |`,
+      `| ${r.name} | ${pct(s.recall)} ${ci(s.tp, s.tp + s.fn)} | ${pct(s.precision)} | ${pct(s.fpr)} ${ci(s.fp, s.fp + s.tn)} | ${pct(s.categoryAccuracy)} | ${r.rulesOnly ? "–" : `${pct(r.failures / prepared.length)} (${r.failures}; ${r.retries} retries)`} | ${p50 === null ? "–" : `${p50} / ${p95} ms`} | ${r.inputTokens} / ${r.outputTokens} |`,
     );
   }
   lines.push(``);
@@ -207,7 +224,7 @@ async function main() {
   const prepared = cases.map(prepare);
   console.log(`${cases.length} cases, models: ${models.join(", ")}, region ${region}, ${batch} emails per request, ${rpm} requests/min`);
 
-  const runs: Run[] = [{ name: "rules + detectors only (no model)", rulesOnly: true, answers: new Map(), inputTokens: 0, outputTokens: 0, failures: 0 }];
+  const runs: Run[] = [{ name: "rules + detectors only (no model)", rulesOnly: true, answers: new Map(), inputTokens: 0, outputTokens: 0, failures: 0, retries: 0 }];
   for (const m of models) {
     console.log(`Running ${m}`);
     runs.push(await runModel(m, prepared, client, batch, rpm));
