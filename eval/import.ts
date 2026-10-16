@@ -99,14 +99,22 @@ function rng(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-const rand = rng(20261014);
+const MAIN_SEED = 20261014;
+const HOLDOUT_SEED = 20261016;
+let rand = rng(MAIN_SEED);
+/** Items picked so far (by content); the held-out set excludes everything the main set used. */
+const picked = new Set<string>();
+let exclude = new Set<string>();
+const keyOf = (x: unknown) => JSON.stringify(x);
 function sample<T>(xs: T[], n: number): T[] {
-  const a = [...xs];
+  const a = xs.filter((x) => !exclude.has(keyOf(x)));
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [a[i], a[j]] = [a[j]!, a[i]!];
   }
-  return a.slice(0, n);
+  const out = a.slice(0, n);
+  for (const x of out) picked.add(keyOf(x));
+  return out;
 }
 const clip = (s: string) => (s.length > MAX_CHARS ? s.slice(0, MAX_CHARS) : s).trim();
 const clean = (s: unknown) => String(s ?? "").replace(/,\s*(?=[A-Z ]{3,}:)/g, "\n").trim();
@@ -241,14 +249,34 @@ function toRedactionCase(id: string, r: Gr, tag: string): RedactionCase | null {
 
 // ---------------------------------------------------------------- main
 
-async function main() {
-  mkdirSync(OUT, { recursive: true });
+async function buildSets() {
   const med = await medical();
   const gr = await gretel();
   const oth = await other();
-  const cases = [...med, ...gr.cases, ...oth];
+  return { cases: [...med, ...gr.cases, ...oth], redaction: gr.redaction };
+}
+
+async function main() {
+  mkdirSync(OUT, { recursive: true });
+  const { cases, redaction } = await buildSets();
   writeFileSync(join(OUT, "cases.json"), JSON.stringify({ version: 1, generated: new Date().toISOString(), cases }, null, 1));
-  writeFileSync(join(OUT, "redaction.json"), JSON.stringify({ version: 1, cases: gr.redaction }, null, 1));
+  writeFileSync(join(OUT, "redaction.json"), JSON.stringify({ version: 1, cases: redaction }, null, 1));
+  const gr = { redaction };
+
+  if (process.argv.includes("--holdout")) {
+    // A second, disjoint sample from the same sources: never used to tune prompts or detectors,
+    // so it shows whether improvements generalise. Same shapes, ids prefixed "ho-".
+    exclude = new Set(picked);
+    rand = rng(HOLDOUT_SEED);
+    const ho = await buildSets();
+    const dir = join(OUT, "holdout");
+    mkdirSync(dir, { recursive: true });
+    const prefix = <T extends { id: string }>(xs: T[]) => xs.map((x) => ({ ...x, id: `ho-${x.id}` }));
+    writeFileSync(join(dir, "cases.json"), JSON.stringify({ version: 1, generated: new Date().toISOString(), cases: prefix(ho.cases) }, null, 1));
+    writeFileSync(join(dir, "redaction.json"), JSON.stringify({ version: 1, cases: prefix(ho.redaction) }, null, 1));
+    const overlap = ho.cases.filter((c) => cases.some((m) => m.body === c.body)).length;
+    console.log(`held-out: ${ho.cases.length} classifier cases, ${ho.redaction.length} redaction texts (overlap with main set: ${overlap})`);
+  }
 
   const count = (c: Category) => cases.filter((x) => x.expected === c && !x.tags.includes("ambiguous")).length;
   console.log(`classifier cases: ${cases.length} (medical ${count("medical")}, financial ${count("financial")}, other ${count("other")}, review-only ${cases.filter((x) => x.tags.includes("ambiguous")).length})`);

@@ -36,6 +36,8 @@ export interface EngineDeps {
   classifier: Classifier | null;
   cache: LabelCache;
   policy: Policy;
+  /** Emails per model request; defaults to BATCH_SIZE. */
+  batchSize?: number;
 }
 
 export type Action = "shared" | "redacted" | "withheld";
@@ -190,8 +192,9 @@ export async function processEmails(emails: Email[], deps: EngineDeps): Promise<
   if (!classifier) {
     for (const { pe, i } of todo) results[i] = { label: ruleLabel(pe.signals) ?? fallbackLabel(pe.signals), modelFailed: false };
   } else {
-    for (let start = 0; start < todo.length; start += BATCH_SIZE) {
-      const chunk = todo.slice(start, start + BATCH_SIZE);
+    const size = deps.batchSize ?? BATCH_SIZE;
+    for (let start = 0; start < todo.length; start += size) {
+      const chunk = todo.slice(start, start + size);
       const inputs = chunk.map(({ pe }) => ({ from: pe.email.from, subject: pe.email.subject, text: pe.text }));
       let labels: (Label | null)[];
       try {

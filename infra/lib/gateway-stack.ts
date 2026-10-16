@@ -50,13 +50,15 @@ export class GatewayStack extends Stack {
     super(scope, id, props);
 
     // One table, pay per request. TTL removes old audit records automatically.
-    // DESTROY suits a test environment: `cdk destroy` removes the data too.
     const table = new dynamodb.TableV2(this, "Table", {
       partitionKey: { name: "pk", type: dynamodb.AttributeType.STRING },
       sortKey: { name: "sk", type: dynamodb.AttributeType.STRING },
       billing: dynamodb.Billing.onDemand(),
       timeToLiveAttribute: "expiresAt",
-      removalPolicy: RemovalPolicy.DESTROY,
+      // Beta users' accounts, settings and Gmail connections live here: keep the table if the
+      // stack is deleted, and allow restoring to any second in the last 35 days.
+      removalPolicy: RemovalPolicy.RETAIN,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
     });
 
     // Encrypts Gmail refresh tokens. Rotated yearly by AWS.

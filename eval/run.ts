@@ -6,6 +6,7 @@
 //   npm run eval -- --external --docs 300          # + 300 public finance documents with sensitive values
 //   npm run eval -- --models eu.amazon.nova-micro-v1:0,<other-id> --tags adversarial
 //   --batch 10 (emails per request, like the gateway)   --rpm 15 (stay under the account's request limit)
+//   npm run eval -- --holdout --docs 191           # disjoint public sample never used for tuning (eval:import -- --holdout)
 //
 // Needs AWS credentials (aws login) with Bedrock access in --region (default eu-north-1).
 
@@ -145,15 +146,18 @@ function report(runs: Run[], prepared: Prepared[], threshold: number): string {
 
 function loadCases(): EvalCase[] {
   const read = (f: string) => (JSON.parse(readFileSync(f, "utf8")) as { cases: EvalCase[] }).cases;
-  let cases = read(join(here, "dataset.json"));
-  if (process.argv.includes("--external")) {
-    const f = join(here, "external", "cases.json");
+  // Held-out runs leave out the hand-written cases too: prompts were tuned on them.
+  let cases = process.argv.includes("--holdout") ? [] : read(join(here, "dataset.json"));
+  // --holdout: the disjoint public sample (npm run eval:import -- --holdout), never used for tuning.
+  const ext = join(here, "external", process.argv.includes("--holdout") ? "holdout" : "");
+  if (process.argv.includes("--external") || process.argv.includes("--holdout")) {
+    const f = join(ext, "cases.json");
     if (!existsSync(f)) throw new Error("Run `npm run eval:import` first.");
     cases = [...cases, ...read(f)];
   }
   const docs = Number(arg("docs", "0"));
   if (docs > 0) {
-    const f = join(here, "external", "redaction.json");
+    const f = join(ext, "redaction.json");
     if (!existsSync(f)) throw new Error("Run `npm run eval:import` first.");
     // Public finance documents with labelled sensitive values: every one should be withheld.
     const rc = (JSON.parse(readFileSync(f, "utf8")) as { cases: RedactionCase[] }).cases.filter((c) => c.required.length > 0);

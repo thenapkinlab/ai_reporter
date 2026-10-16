@@ -157,16 +157,19 @@ interface Run {
   outputTokens: number;
 }
 
+const BATCH = Number(arg("batch", String(BATCH_SIZE)));
+
 async function runPipeline(name: string, cases: RedactCase[], classifier: Classifier | null, onBatch?: () => void): Promise<Run> {
   const cache = new Map<string, Label>();
   const deps: EngineDeps = {
     classifier,
     cache: { get: async (id) => cache.get(id) ?? null, put: async (id, l) => void cache.set(id, l) },
     policy: DEFAULT_POLICY,
+    batchSize: BATCH,
   };
   const run: Run = { name, decisions: new Map(), latencies: [], inputTokens: 0, outputTokens: 0 };
-  for (let i = 0; i < cases.length; i += BATCH_SIZE) {
-    const chunk = cases.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < cases.length; i += BATCH) {
+    const chunk = cases.slice(i, i + BATCH);
     const ds = await processEmails(chunk.map(toEmail), deps);
     ds.forEach((d) => run.decisions.set(d.messageId, d));
     onBatch?.();
