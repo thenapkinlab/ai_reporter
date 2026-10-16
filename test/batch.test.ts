@@ -60,6 +60,14 @@ describe("batched classification", () => {
     expect(ds[1]!.because).toEqual(["unchecked (model unavailable)"]);
   });
 
+  it("asks again for just the emails the model left unanswered", async () => {
+    let call = 0;
+    const { c, calls } = counting((xs) => (call++ === 0 ? xs.map((x, j) => (j === 1 ? null : other())) : xs.map(other)));
+    const ds = await processEmails(mail(3), deps(c));
+    expect(calls).toEqual([3, 1]);
+    expect(ds.every((d) => d.action === "shared")).toBe(true);
+  });
+
   it("treats a failed request as unanswered", async () => {
     const c: Classifier = { classify: async () => other(), classifyBatch: async () => { throw new Error("throttled"); } };
     const ds = await processEmails(mail(3), deps(c));

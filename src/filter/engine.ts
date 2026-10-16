@@ -11,6 +11,7 @@ import {
   fallbackLabel,
   ruleLabel,
   type Category,
+  type ClassifyInput,
   type Classifier,
   type Label,
   type SensitiveItem,
@@ -196,15 +197,13 @@ export async function processEmails(emails: Email[], deps: EngineDeps): Promise<
     for (let start = 0; start < todo.length; start += size) {
       const chunk = todo.slice(start, start + size);
       const inputs = chunk.map(({ pe }) => ({ from: pe.email.from, subject: pe.email.subject, text: pe.text }));
-      let labels: (Label | null)[];
-      try {
-        labels =
-          chunk.length > 1 && classifier.classifyBatch
-            ? await classifier.classifyBatch(inputs)
-            : await Promise.all(inputs.map((x) => classifier.classify(x).catch((e) => (e instanceof ModelBusyError ? Promise.reject(e) : null))));
-      } catch (e) {
-        if (e instanceof ModelBusyError) throw e;
-        labels = chunk.map(() => null);
+      const labels = await ask(classifier, inputs);
+      // The model occasionally garbles part of a batch: ask once more for just the missing emails
+      // before withholding them. Costs a request only when something went wrong.
+      const missing = labels.flatMap((l, j) => (l ? [] : [j]));
+      if (missing.length) {
+        const retry = await ask(classifier, missing.map((j) => inputs[j]!));
+        missing.forEach((j, k) => (labels[j] = retry[k] ?? null));
       }
       for (let j = 0; j < chunk.length; j++) {
         const { pe, i } = chunk[j]!;
@@ -220,6 +219,18 @@ export async function processEmails(emails: Email[], deps: EngineDeps): Promise<
     }
   }
   return prepared.map((pe, i) => finish(pe, results[i]!.label, results[i]!.modelFailed, deps));
+}
+
+/** One model request for some emails; null where there's no usable answer. Only ModelBusyError escapes. */
+async function ask(classifier: Classifier, inputs: ClassifyInput[]): Promise<(Label | null)[]> {
+  try {
+    return inputs.length > 1 && classifier.classifyBatch
+      ? await classifier.classifyBatch(inputs)
+      : await Promise.all(inputs.map((x) => classifier.classify(x).catch((e) => (e instanceof ModelBusyError ? Promise.reject(e) : null))));
+  } catch (e) {
+    if (e instanceof ModelBusyError) throw e;
+    return inputs.map(() => null);
+  }
 }
 
 export async function processEmail(email: Email, deps: EngineDeps): Promise<Decision> {
