@@ -17,7 +17,7 @@ import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
 import { BedrockClassifier, type CallInfo } from "../src/aws/bedrock";
 import { PROMPT_VERSION, type Label } from "../src/filter/classifier";
 import type { RedactionCase } from "./import";
-import { accuracyByTag, confusion, outcomeFor, percentile, prepare, score, type EvalCase, type Outcome, type Prepared } from "./score";
+import { accuracyByTag, confusion, outcomeFor, percentile, prepare, score, wilson, type EvalCase, type Outcome, type Prepared } from "./score";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_MODELS = ["eu.amazon.nova-2-lite-v1:0", "eu.anthropic.claude-haiku-4-5-20251001-v1:0"];
@@ -94,6 +94,10 @@ function outcomes(run: Run, prepared: Prepared[], threshold: number): Outcome[] 
 }
 
 const pct = (x: number | null) => (x === null ? "–" : `${(x * 100).toFixed(1)}%`);
+const ci = (k: number, n: number) => {
+  const [lo, hi] = wilson(k, n);
+  return n ? `(${(lo * 100).toFixed(1)}–${(hi * 100).toFixed(1)})` : "";
+};
 
 function report(runs: Run[], prepared: Prepared[], threshold: number): string {
   const lines: string[] = [];
@@ -104,6 +108,7 @@ function report(runs: Run[], prepared: Prepared[], threshold: number): string {
     ``,
   );
   lines.push(`## Summary`, ``);
+  lines.push(`Ranges are 95% confidence intervals (Wilson): differences inside them are likely noise.`, ``);
   lines.push(`| Model | Recall | Precision | FPR | Category accuracy | Unanswered rate | Latency p50 / p95 (per request) | Tokens in / out |`);
   lines.push(`|---|---|---|---|---|---|---|---|`);
   for (const r of runs) {
@@ -112,7 +117,7 @@ function report(runs: Run[], prepared: Prepared[], threshold: number): string {
     const lat = o.map((x) => x.latencyMs).filter((x): x is number => x !== null);
     const p50 = percentile(lat, 0.5), p95 = percentile(lat, 0.95);
     lines.push(
-      `| ${r.name} | ${pct(s.recall)} | ${pct(s.precision)} | ${pct(s.fpr)} | ${pct(s.categoryAccuracy)} | ${r.rulesOnly ? "–" : `${pct(r.failures / prepared.length)} (${r.failures})`} | ${p50 === null ? "–" : `${p50} / ${p95} ms`} | ${r.inputTokens} / ${r.outputTokens} |`,
+      `| ${r.name} | ${pct(s.recall)} ${ci(s.tp, s.tp + s.fn)} | ${pct(s.precision)} | ${pct(s.fpr)} ${ci(s.fp, s.fp + s.tn)} | ${pct(s.categoryAccuracy)} | ${r.rulesOnly ? "–" : `${pct(r.failures / prepared.length)} (${r.failures})`} | ${p50 === null ? "–" : `${p50} / ${p95} ms`} | ${r.inputTokens} / ${r.outputTokens} |`,
     );
   }
   lines.push(``);
@@ -135,7 +140,7 @@ function report(runs: Run[], prepared: Prepared[], threshold: number): string {
       const x = byId.get(id)!;
       return `- \`${id}\` expected ${x.expected}${x.expectWithhold ? " (withhold)" : ""}; label ${x.label.category} ${x.label.confidence.toFixed(2)} [${x.label.sensitive.join(", ")}] (${x.label.source}); because: ${x.because.join(", ") || "–"} — ${x.label.reason}`;
     };
-    lines.push(``, `**False negatives: shared but should be withheld** (${s.missed.length})`, ...s.missed.slice(0, 60).map(detail));
+    lines.push(``, `**False negatives: shared but should be withheld** (${s.falseNegatives.length})`, ...s.falseNegatives.slice(0, 60).map(detail));
     lines.push(``, `**False positives: withheld but should be shared** (${s.falsePositives.length})`, ...s.falsePositives.slice(0, 60).map(detail));
     const errs = o.filter((x) => x.modelError);
     if (errs.length) lines.push(``, `**Model errors** (${errs.length})`, ...errs.slice(0, 10).map((x) => `- \`${x.id}\`: ${x.modelError}`));
@@ -144,13 +149,21 @@ function report(runs: Run[], prepared: Prepared[], threshold: number): string {
   return lines.join("\n");
 }
 
+function reviewedNoise(): Set<string> {
+  const f = join(here, "label-review.json");
+  if (!existsSync(f)) return new Set();
+  const { noise } = JSON.parse(readFileSync(f, "utf8")) as { noise: { case: string; value: string }[] };
+  return new Set(noise.map((n) => `${n.case}|${n.value}`));
+}
+
 function loadCases(): EvalCase[] {
   const read = (f: string) => (JSON.parse(readFileSync(f, "utf8")) as { cases: EvalCase[] }).cases;
   // Held-out runs leave out the hand-written cases too: prompts were tuned on them.
-  let cases = process.argv.includes("--holdout") ? [] : read(join(here, "dataset.json"));
+  let cases = process.argv.includes("--holdout") || process.argv.includes("--test") ? [] : read(join(here, "dataset.json"));
   // --holdout: the disjoint public sample (npm run eval:import -- --holdout), never used for tuning.
-  const ext = join(here, "external", process.argv.includes("--holdout") ? "holdout" : "");
-  if (process.argv.includes("--external") || process.argv.includes("--holdout")) {
+  const split = process.argv.includes("--test") ? "test" : process.argv.includes("--holdout") ? "holdout" : "";
+  const ext = join(here, "external", split);
+  if (process.argv.includes("--external") || split) {
     const f = join(ext, "cases.json");
     if (!existsSync(f)) throw new Error("Run `npm run eval:import` first.");
     cases = [...cases, ...read(f)];
@@ -160,7 +173,11 @@ function loadCases(): EvalCase[] {
     const f = join(ext, "redaction.json");
     if (!existsSync(f)) throw new Error("Run `npm run eval:import` first.");
     // Public finance documents with labelled sensitive values: every one should be withheld.
-    const rc = (JSON.parse(readFileSync(f, "utf8")) as { cases: RedactionCase[] }).cases.filter((c) => c.required.length > 0);
+    // Values a person reviewed and found mislabelled don't count; documents left with none are dropped.
+    const noise = reviewedNoise();
+    const rc = (JSON.parse(readFileSync(f, "utf8")) as { cases: RedactionCase[] }).cases
+      .map((c) => ({ ...c, required: c.required.filter((r) => !noise.has(`${c.id.replace(/^(ho|te)-/, "")}|${r.value}`)) }))
+      .filter((c) => c.required.length > 0);
     cases = [
       ...cases,
       ...rc.slice(0, docs).map((c) => ({

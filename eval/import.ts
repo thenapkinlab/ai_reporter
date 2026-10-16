@@ -101,6 +101,7 @@ function rng(seed: number) {
 }
 const MAIN_SEED = 20261014;
 const HOLDOUT_SEED = 20261016;
+const TEST_SEED = 20261017;
 let rand = rng(MAIN_SEED);
 /** Items picked so far (by content); the held-out set excludes everything the main set used. */
 const picked = new Set<string>();
@@ -266,16 +267,32 @@ async function main() {
   if (process.argv.includes("--holdout")) {
     // A second, disjoint sample from the same sources: never used to tune prompts or detectors,
     // so it shows whether improvements generalise. Same shapes, ids prefixed "ho-".
+    // Three disjoint splits: dev (the main set: look at errors, change prompts), validation
+    // ("holdout": compare versions on totals only) and test (locked: run once per release).
+    const seen = new Set(cases.map((c) => c.body));
+    const write = (name: string, idPrefix: string, set: { cases: EvalCase[]; redaction: RedactionCase[] }) => {
+      // The sources contain repeated texts: drop any email already used by an earlier split.
+      set = { ...set, cases: set.cases.filter((c) => !seen.has(c.body)) };
+      for (const c of set.cases) seen.add(c.body);
+      const dir = join(OUT, name);
+      mkdirSync(dir, { recursive: true });
+      const prefix = <T extends { id: string }>(xs: T[]) => xs.map((x) => ({ ...x, id: `${idPrefix}-${x.id}` }));
+      writeFileSync(join(dir, "cases.json"), JSON.stringify({ version: 1, generated: new Date().toISOString(), cases: prefix(set.cases) }, null, 1));
+      writeFileSync(join(dir, "redaction.json"), JSON.stringify({ version: 1, cases: prefix(set.redaction) }, null, 1));
+      const overlap = set.cases.filter((c) => cases.some((m) => m.body === c.body)).length;
+      console.log(`${name}: ${set.cases.length} classifier cases, ${set.redaction.length} redaction texts (overlap with dev: ${overlap})`);
+    };
     exclude = new Set(picked);
     rand = rng(HOLDOUT_SEED);
     const ho = await buildSets();
-    const dir = join(OUT, "holdout");
-    mkdirSync(dir, { recursive: true });
-    const prefix = <T extends { id: string }>(xs: T[]) => xs.map((x) => ({ ...x, id: `ho-${x.id}` }));
-    writeFileSync(join(dir, "cases.json"), JSON.stringify({ version: 1, generated: new Date().toISOString(), cases: prefix(ho.cases) }, null, 1));
-    writeFileSync(join(dir, "redaction.json"), JSON.stringify({ version: 1, cases: prefix(ho.redaction) }, null, 1));
-    const overlap = ho.cases.filter((c) => cases.some((m) => m.body === c.body)).length;
-    console.log(`held-out: ${ho.cases.length} classifier cases, ${ho.redaction.length} redaction texts (overlap with main set: ${overlap})`);
+    exclude = new Set(picked);
+    rand = rng(TEST_SEED);
+    const te = await buildSets();
+    // The Gretel documents left after the dev sample are few, so validation and test split them in half.
+    const pool = ho.redaction;
+    const half = Math.ceil(pool.length / 2);
+    write("holdout", "ho", { cases: ho.cases, redaction: pool.slice(0, half) });
+    write("test", "te", { cases: te.cases, redaction: pool.slice(half) });
   }
 
   const count = (c: Category) => cases.filter((x) => x.expected === c && !x.tags.includes("ambiguous")).length;

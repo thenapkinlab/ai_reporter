@@ -112,7 +112,11 @@ export interface Scores {
   /** False positive rate: share of emails that should be shared that were withheld. */
   fpr: number;
   categoryAccuracy: number | null;
-  missed: string[];
+  tp: number;
+  fn: number;
+  fp: number;
+  tn: number;
+  falseNegatives: string[];
   falsePositives: string[];
 }
 
@@ -129,7 +133,11 @@ export function score(outcomes: Outcome[]): Scores {
     precision: flagged.length ? flagged.filter((o) => o.expectWithhold).length / flagged.length : 1,
     fpr: negatives.length ? negatives.filter((o) => o.withheld).length / negatives.length : 0,
     categoryAccuracy: categorised.length ? categorised.filter((o) => o.model!.category === o.expected).length / categorised.length : null,
-    missed: positives.filter((o) => !o.withheld).map((o) => o.id),
+    tp: positives.filter((o) => o.withheld).length,
+    fn: positives.filter((o) => !o.withheld).length,
+    fp: negatives.filter((o) => o.withheld).length,
+    tn: negatives.filter((o) => !o.withheld).length,
+    falseNegatives: positives.filter((o) => !o.withheld).map((o) => o.id),
     falsePositives: negatives.filter((o) => o.withheld).map((o) => o.id),
   };
 }
@@ -170,6 +178,16 @@ export function redactionCheck(prepared: Prepared[]): { required: number; found:
     }
   }
   return { required, found, misses };
+}
+
+/** 95% Wilson score interval for k successes out of n. */
+export function wilson(k: number, n: number, z = 1.96): [number, number] {
+  if (!n) return [0, 0];
+  const p = k / n;
+  const d = 1 + (z * z) / n;
+  const c = (p + (z * z) / (2 * n)) / d;
+  const h = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / d;
+  return [Math.max(0, c - h), Math.min(1, c + h)];
 }
 
 export function percentile(xs: number[], q: number): number | null {

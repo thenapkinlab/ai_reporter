@@ -1,0 +1,90 @@
+{
+ "description": "Public-dataset labels reviewed by hand and found wrong: the labelled text isn't a sensitive value under our policy. Benchmarks drop these values (and documents left with none). Reviewed on the dev split only.",
+ "noise": [
+  {
+   "case": "gr-Dutch-3284",
+   "value": "C68969380",
+   "note": "example value in form instructions"
+  },
+  {
+   "case": "gr-Dutch-3335",
+   "value": "DTc2yIsGooN4h211sXcqbGrq9xjMnHKfdUAgnWNTS1tJA5ybpDOjiam-wHirryB7",
+   "note": "company identifier in XBRL, not a key"
+  },
+  {
+   "case": "gr-English-1088",
+   "value": "467185349",
+   "note": "insurance policy number, labelled passport"
+  },
+  {
+   "case": "gr-English-1629",
+   "value": "175398822",
+   "note": "derivative fixing value in XML"
+  },
+  {
+   "case": "gr-English-670",
+   "value": "536492158",
+   "note": "number in a router support chat"
+  },
+  {
+   "case": "gr-English-70",
+   "value": "LZMR90367855026662",
+   "note": "EDI party identifier"
+  },
+  {
+   "case": "gr-English-746",
+   "value": "[Insert DOB]",
+   "note": "template placeholder"
+  },
+  {
+   "case": "gr-English-75",
+   "value": "021197",
+   "note": "part of a URL"
+  },
+  {
+   "case": "gr-English-845",
+   "value": "220",
+   "note": "container seal number"
+  },
+  {
+   "case": "gr-English-968",
+   "value": "781895991",
+   "note": "FIX protocol price field"
+  },
+  {
+   "case": "gr-German-1956",
+   "value": "221560627",
+   "note": "EDIFACT interchange identifier"
+  },
+  {
+   "case": "gr-German-2083",
+   "value": "M96-1238-514-14",
+   "note": "payment reference number, labelled licence"
+  },
+  {
+   "case": "gr-Italian-3175",
+   "value": "data di nascita",
+   "note": "the words 'date of birth', not a date"
+  },
+  {
+   "case": "gr-Spanish-2654",
+   "value": "116",
+   "note": "FIX protocol field value"
+  },
+  {
+   "case": "gr-Swedish-2852",
+   "value": "645",
+   "note": "digits of an amount (SEK645000)"
+  },
+  {
+   "case": "gr-Italian-3087",
+   "value": "TIZIANAECA822094",
+   "note": "SWIFT field, labelled PIN"
+  },
+  {
+   "case": "gr-Italian-3059",
+   "value": "Z47854237",
+   "note": "SWIFT bank identifier, labelled passport"
+  }
+ ]
+}

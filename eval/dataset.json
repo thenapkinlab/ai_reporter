@@ -105,7 +105,8 @@
   {
    "id": "medh-01",
    "tags": [
-    "attachment-only"
+    "attachment-only",
+    "ambiguous"
    ],
    "expected": "other",
    "from": "Anna Berg <anna.berg@gmail.com>",
@@ -117,7 +118,7 @@
      "text": "PATHOLOGY REPORT. Specimen: breast biopsy, left. Findings: invasive ductal carcinoma, grade 2. ER positive. Recommend oncology referral."
     }
    ],
-   "note": "Sensitive content is only in the attachment, which the gateway never opens or sends: the email body alone is shared."
+   "note": "Whether \"Mum's papers\" is medical can't be told without the attachment; review only."
   },
   {
    "id": "medh-02",
@@ -308,7 +309,7 @@
    "tags": [
     "attachment-only"
    ],
-   "expected": "other",
+   "expected": "financial",
    "from": "Sam Lee <sam.lee@gmail.com>",
    "subject": "for the loan application",
    "body": "Here you go.",
@@ -318,7 +319,7 @@
      "text": "STATEMENT OF ACCOUNT. Account holder: S. Lee. IBAN GB82 WEST 1234 5698 7654 32. Opening balance 4,120.00. Closing balance 3,860.55."
     }
    ],
-   "note": "Sensitive content is only in the attachment, which the gateway never opens or sends: the email body alone is shared."
+   "note": "The email itself is about the loan application, which is financial under the policy; the attachment is never opened."
   },
   {
    "id": "finh-02",
