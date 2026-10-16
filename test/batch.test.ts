@@ -76,6 +76,19 @@ describe("batch parsing", () => {
     expect(out[2]).toBeNull();
   });
 
+  it("keeps the other answers when one object is malformed", () => {
+    // Real Nova 2 Lite output: the last object's "}" and the array's "]" are swapped.
+    const raw = '```json\n[{"n":1,"category":"medical","confidence":1.0,"remove":[],"reason":"a"},{"n":2,"category":"other","confidence":0.9,"remove":[{"type":"home_address","text":"5 Oak Rd"}],"reason":"b"},{"n":3,"category":"medical","confidence":1.0,"remove":[],"reason":"c"]}\n```';
+    const out = parseBatchLabels(raw, 3);
+    expect(out.map((l) => l?.category)).toEqual(["medical", "other", "medical"]);
+    expect(out[1]?.values).toEqual([{ item: "home_address", text: "5 Oak Rd" }]);
+  });
+
+  it("returns null only for the object that can't be read", () => {
+    const raw = '[{"n":1,"category":"other","confidence":0.9,"remove":[],"reason":"ok"},{"n":2,"category":"other","confidence":0.9,"remove":[{"type":"credentials","text":"pa"ss"}],"reason":"bad"}]';
+    expect(parseBatchLabels(raw, 2).map((l) => l?.category ?? null)).toEqual(["other", null]);
+  });
+
   it("returns all nulls for unparseable output", () => {
     expect(parseBatchLabels("sorry, I can't", 2)).toEqual([null, null]);
   });

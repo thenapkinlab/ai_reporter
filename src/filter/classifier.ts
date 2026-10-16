@@ -160,20 +160,49 @@ export function batchMessage(marker: string, inputs: ClassifyInput[], maxCharsEa
 /** Matches answers to emails by their "n"; anything missing or malformed is null. */
 export function parseBatchLabels(raw: string, count: number): (Label | null)[] {
   const out: (Label | null)[] = new Array(count).fill(null);
-  const m = raw.match(/\[[\s\S]*\]/);
-  if (!m) return out;
-  let arr: unknown;
-  try {
-    arr = JSON.parse(m[0]);
-  } catch {
-    return out;
-  }
-  if (!Array.isArray(arr)) return out;
-  arr.forEach((item, idx) => {
+  const take = (item: unknown, idx: number) => {
     const n = Number((item as { n?: unknown })?.n ?? idx + 1);
     if (Number.isInteger(n) && n >= 1 && n <= count && out[n - 1] === null) out[n - 1] = parseModelLabel(item);
+  };
+  const m = raw.match(/\[[\s\S]*\]/);
+  try {
+    const arr: unknown = m ? JSON.parse(m[0]) : null;
+    if (Array.isArray(arr)) {
+      arr.forEach(take);
+      return out;
+    }
+  } catch {
+    // Fall through: read each email's object on its own.
+  }
+  // One malformed object (a swapped bracket, a stray quote) shouldn't cost the whole batch:
+  // split at each {"n": and parse every object separately, repairing common slips.
+  const starts = [...raw.matchAll(/\{\s*"n"\s*:/g)].map((x) => x.index!);
+  starts.forEach((s0, i) => {
+    const piece = raw.slice(s0, starts[i + 1] ?? raw.length);
+    const obj = parseLoose(piece);
+    if (obj) take(obj, i);
   });
   return out;
+}
+
+/** Parses one JSON object that may carry trailing commas, brackets or code fences, or a missing brace. */
+function parseLoose(piece: string): unknown {
+  const base = piece.replace(/```[a-z]*/gi, "").trim().replace(/[,\s]+$/, "");
+  const candidates = [
+    base,
+    base.replace(/\]\s*$/, ""), // last object followed by the array's ]
+    base.replace(/\]\s*\}\s*\]?\s*$/, "}"), // "...]}" instead of "...}]"
+    `${base.replace(/[\]\s]*$/, "")}}`, // missing closing brace
+  ];
+  for (const c of candidates) {
+    try {
+      const v: unknown = JSON.parse(c);
+      if (v && typeof v === "object" && !Array.isArray(v)) return v;
+    } catch {
+      // try the next repair
+    }
+  }
+  return null;
 }
 
 export function parseModelLabel(raw: unknown): Label | null {
