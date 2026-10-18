@@ -1,14 +1,19 @@
-// CDK entry point. Settings come from cdk.json "context" or `-c key=value` on the command line.
+// CDK entry point. Settings come from `-c key=value`, cdk.json "context", or deploy.local.json
+// (git-ignored: your own AuthKit domain, WorkOS client ID and email addresses; see deploy.example.json).
 
+import { existsSync, readFileSync } from "node:fs";
 import { App } from "aws-cdk-lib";
 import { GatewayStack } from "../lib/gateway-stack";
 
 const app = new App();
+const localFile = new URL("../../deploy.local.json", import.meta.url);
+const local = (existsSync(localFile) ? JSON.parse(readFileSync(localFile, "utf8")) : {}) as Record<string, string>;
+const get = (key: string): string | undefined => (app.node.tryGetContext(key) as string | undefined) || local[key] || undefined;
 const ctx = (key: string, fallback?: string): string => {
-  const v = app.node.tryGetContext(key) as string | undefined;
+  const v = get(key);
   if (v === undefined || v === "") {
     if (fallback !== undefined) return fallback;
-    throw new Error(`Missing context "${key}". Set it in cdk.json or pass -c ${key}=...`);
+    throw new Error(`Missing setting "${key}". Put it in deploy.local.json (see deploy.example.json) or pass -c ${key}=...`);
   }
   return v;
 };
@@ -25,9 +30,9 @@ new GatewayStack(app, "AgentGateway", {
   userEmailsPerDay: ctx("userEmailsPerDay", "500"),
   modelRequestsPerMinute: ctx("modelRequestsPerMinute", "18"),
   maxConcurrency: Number(ctx("maxConcurrency", "10")),
-  mcpAudience: (app.node.tryGetContext("mcpAudience") as string | undefined) || undefined,
-  budgetEmail: (app.node.tryGetContext("budgetEmail") as string | undefined) || undefined,
-  alarmEmail: (app.node.tryGetContext("alarmEmail") as string | undefined) || undefined,
+  mcpAudience: get("mcpAudience"),
+  budgetEmail: get("budgetEmail"),
+  alarmEmail: get("alarmEmail"),
   inviteOnly: ctx("inviteOnly", "true") !== "false",
-  contactEmail: (app.node.tryGetContext("contactEmail") as string | undefined) || undefined,
+  contactEmail: get("contactEmail"),
 });

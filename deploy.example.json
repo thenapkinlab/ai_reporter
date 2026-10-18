@@ -1,0 +1,7 @@
+{
+  "authkitDomain": "https://<your-subdomain>.authkit.app",
+  "workosClientId": "client_...",
+  "budgetEmail": "",
+  "alarmEmail": "",
+  "contactEmail": ""
+}

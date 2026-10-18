@@ -4,3 +4,4 @@ cdk.out/
 *.log
 eval/results/
 eval/external/
+deploy.local.json

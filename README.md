@@ -8,7 +8,9 @@ birth), and shows each user what their assistant read on a per-user dashboard.
 Runs on AWS: Lambda (Function URL), DynamoDB, KMS, Bedrock, SSM Parameter Store, deployed with
 the AWS CDK. Sign-in is WorkOS AuthKit.
 
-Design doc: https://claude.ai/artifact/ANNBxu1zW94YqFW6ThmRMX
+> **Status:** a personal project in an invite-only beta. It comes with no warranty: the filter catches most
+> sensitive content but can miss some (see the benchmarks below). Don't rely on it for an inbox where a single
+> slip would be serious. Security issues: see [SECURITY.md](SECURITY.md).
 
 ## How it works
 
@@ -38,8 +40,8 @@ npm run testers -- remove tester@example.com
 
 Send testers `/guide` (setup steps, what to try, how to report problems). `/notice` is the beta notice: what's
 read, what's stored and for how long, where it runs, and how to leave. Testers must tick that they've read it
-before connecting Gmail; the time they accepted is kept on their profile. `inviteOnly` and `contactEmail` are in
-`cdk.json`.
+before connecting Gmail; the time they accepted is kept on their profile. `inviteOnly` is in
+`cdk.json`; `contactEmail` is in your `deploy.local.json`.
 
 ## Usage limits
 
@@ -56,7 +58,7 @@ values in `cdk.json`.
 
 ### Alarms (for you, the operator)
 
-CloudWatch alarms email the address in `alarmEmail` (or `budgetEmail`) through an SNS topic; confirm the
+CloudWatch alarms email the address in `alarmEmail` (or `budgetEmail`) from your `deploy.local.json` through an SNS topic; confirm the
 subscription from the first email AWS sends. Users never get these: they see the tool's own "busy" or "limit
 reached" message, and their usage on the dashboard.
 
@@ -266,7 +268,8 @@ MTSamples' original terms are unclear, so it's for internal benchmarking only an
 2. Under Connect → Configuration, turn on **Dynamic Client Registration** (Claude) and
    **Client ID Metadata Documents** (ChatGPT; off by default). See https://workos.com/docs/authkit/mcp.
 3. Turn on "Sign in with Google" and email codes; you don't need passwords.
-4. Put your AuthKit domain and client ID in `cdk.json` (`authkitDomain`, `workosClientId`).
+4. Copy `deploy.example.json` to `deploy.local.json` (git-ignored) and fill in your AuthKit domain and client ID
+   (`authkitDomain`, `workosClientId`) and the email addresses for alarms and the testers' contact.
 5. After the first deploy, add the redirect URI `<GatewayUrl>auth/callback`.
 
 ### 3. Google Cloud (free; Testing mode allows up to 100 test users)
@@ -289,7 +292,7 @@ aws ssm put-parameter --region eu-north-1 --type SecureString --name /agent-gate
 ### 5. Deploy
 
 ```bash
-npm run deploy                                   # alarms go to alarmEmail in cdk.json
+npm run deploy                                   # alarms go to alarmEmail in deploy.local.json
 ```
 
 The output shows `GatewayUrl` (the dashboard) and `McpUrl` (paste into assistants). Add the two redirect URIs above,
