@@ -333,3 +333,10 @@ The dashboard's Setup page shows the URL and these steps.
 - MCP: stateless Streamable HTTP with JSON responses, protocol versions 2025-03-26 to 2025-11-25.
 - Email is processed in Lambda memory. Before a public launch: Google verification, the CASA assessment, and
   moving email handling into a Nitro Enclave.
+
+## Licence
+
+[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only). You can use, change and run this code, but
+if you run a modified version as a service for others, you must make your changes available to its users under
+the same licence. If that doesn't suit you, a separate commercial licence may be available: open an issue to ask.
+
