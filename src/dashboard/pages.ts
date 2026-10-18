@@ -48,7 +48,10 @@ export interface Nav {
   dev: boolean;
 }
 
-export function layout(title: string, body: string, nav: Nav | null): string {
+export /** AGPL-3.0 section 13: people using the service over the network can get its source. */
+export const SOURCE_URL = "https://github.com/thenapkinlab/ai_reporter";
+
+function layout(title: string, body: string, nav: Nav | null): string {
   const link = (href: string, key: Nav["active"], label: string) =>
     `<a href="${href}" class="${nav?.active === key ? "on" : ""}">${label}</a>`;
   const navHtml = nav
@@ -58,7 +61,9 @@ export function layout(title: string, body: string, nav: Nav | null): string {
     : "";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)} · Private Gmail</title><style>${CSS}</style></head>
-<body><header><div class="bar"><span class="brand">Private Gmail</span>${navHtml}</div></header><main>${body}</main></body></html>`;
+<body><header><div class="bar"><span class="brand">Private Gmail</span>${navHtml}</div></header><main>${body}</main>
+<footer class="muted" style="max-width:960px;margin:24px auto;padding:0 16px">Open source under the AGPL-3.0:
+<a href="${SOURCE_URL}">source code</a> · <a href="/notice">beta notice</a> · <a href="/guide">tester guide</a></footer></body></html>`;
 }
 
 export function html(page: string, status = 200, headers: Record<string, string> = {}): Response {
