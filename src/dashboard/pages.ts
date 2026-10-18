@@ -48,10 +48,10 @@ export interface Nav {
   dev: boolean;
 }
 
-export /** AGPL-3.0 section 13: people using the service over the network can get its source. */
+/** AGPL-3.0 section 13: people using the service over the network can get its source. */
 export const SOURCE_URL = "https://github.com/thenapkinlab/ai_reporter";
 
-function layout(title: string, body: string, nav: Nav | null): string {
+export function layout(title: string, body: string, nav: Nav | null): string {
   const link = (href: string, key: Nav["active"], label: string) =>
     `<a href="${href}" class="${nav?.active === key ? "on" : ""}">${label}</a>`;
   const navHtml = nav
