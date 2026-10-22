@@ -34,8 +34,15 @@ export async function workosAuthenticate(cfg: Config, code: string): Promise<{ i
       code,
     }),
   });
-  const json = (await res.json()) as { user?: { id: string; email: string }; message?: string };
-  if (!res.ok || !json.user) throw new Error(`Sign-in failed: ${json.message ?? res.status}`);
+  const json = (await res.json().catch(() => ({}))) as {
+    user?: { id: string; email: string };
+    message?: string;
+    error?: string;
+    error_description?: string;
+  };
+  // WorkOS's own reason (e.g. invalid_client after an API key rotation); never the key itself.
+  if (!res.ok || !json.user)
+    throw new Error(`Sign-in failed: ${res.status} ${json.error ?? ""} ${json.error_description ?? json.message ?? ""}`.trim());
   return json.user;
 }
 
