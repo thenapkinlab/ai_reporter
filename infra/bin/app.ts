@@ -35,4 +35,6 @@ new GatewayStack(app, "AgentGateway", {
   alarmEmail: get("alarmEmail"),
   inviteOnly: ctx("inviteOnly", "true") !== "false",
   contactEmail: get("contactEmail"),
+  customDomain: get("customDomain"),
+  certificateArn: get("certificateArn"),
 });

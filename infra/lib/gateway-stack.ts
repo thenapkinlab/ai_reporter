@@ -6,6 +6,9 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
+import * as apigw from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cwActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as sns from "aws-cdk-lib/aws-sns";
@@ -43,6 +46,13 @@ export interface GatewayStackProps extends StackProps {
   /** Invite-only beta (tester allow list) and the contact shown on the notice and guide. */
   inviteOnly: boolean;
   contactEmail?: string;
+  /**
+   * Custom domain (e.g. aireporter.dev) and an ACM certificate ARN for it in the stack's region,
+   * issued beforehand (scripts/domain.sh). Served through an API Gateway HTTP API in front of the
+   * same Lambda; the Function URL keeps working.
+   */
+  customDomain?: string;
+  certificateArn?: string;
   /** Where CloudWatch alarms are emailed (the operator, never users). Falls back to budgetEmail. */
   alarmEmail?: string;
 }
@@ -273,6 +283,27 @@ export class GatewayStack extends Stack {
 
     new CfnOutput(this, "GatewayUrl", { value: fnUrl.url, description: "Dashboard (sign in here)" });
     new CfnOutput(this, "McpUrl", { value: `${fnUrl.url}mcp`, description: "Paste into Claude or ChatGPT" });
+
+    // Custom domain: a regional API Gateway HTTP API (payload 2.0, the same event shape as the
+    // Function URL), so the certificate can live in this region. CloudFront would need us-east-1.
+    if (props.customDomain && props.certificateArn) {
+      const domain = new apigw.DomainName(this, "Domain", {
+        domainName: props.customDomain,
+        certificate: acm.Certificate.fromCertificateArn(this, "Certificate", props.certificateArn),
+      });
+      const api = new apigw.HttpApi(this, "Api", {
+        apiName: "agent-gateway",
+        defaultIntegration: new HttpLambdaIntegration("Gateway", fn, { payloadFormatVersion: apigw.PayloadFormatVersion.VERSION_2_0 }),
+        defaultDomainMapping: { domainName: domain },
+        disableExecuteApiEndpoint: true,
+      });
+      new CfnOutput(this, "CustomDomainTarget", {
+        value: domain.regionalDomainName,
+        description: `Point ${props.customDomain} here (CNAME, or ALIAS/flattened CNAME at the apex)`,
+      });
+      new CfnOutput(this, "CustomUrl", { value: `https://${props.customDomain}/`, description: "Dashboard on the custom domain" });
+      new CfnOutput(this, "ApiId", { value: api.apiId });
+    }
     new CfnOutput(this, "TableName", { value: table.tableName });
   }
 }

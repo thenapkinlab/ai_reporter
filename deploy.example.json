@@ -3,5 +3,7 @@
   "workosClientId": "client_...",
   "budgetEmail": "",
   "alarmEmail": "",
-  "contactEmail": ""
+  "contactEmail": "",
+  "customDomain": "",
+  "certificateArn": ""
 }

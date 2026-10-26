@@ -42,7 +42,7 @@ export class RateLimitedClassifier implements Classifier {
     private inner: Classifier,
     private count: (minute: number) => Promise<number>,
     private perMinute: number,
-    private maxWaitMs = 20000,
+    private maxWaitMs = 12000, // API Gateway HTTP APIs time out at 30 s
     private now: () => number = Date.now,
     private wait: (ms: number) => Promise<void> = sleep,
   ) {}
