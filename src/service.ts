@@ -176,7 +176,9 @@ export class GatewayService implements ToolBackend {
           result: result({
             id: messageId,
             withheld: true,
-            notice: `This email was withheld by the user's privacy settings (${decision.because.join(", ")}).`,
+            notice: decision.because.includes(MODEL_UNAVAILABLE)
+              ? "This email couldn't be checked just now, so it was held back. Try again shortly."
+              : `This email was withheld by the user's privacy settings (${decision.because.join(", ")}).`,
             filter_note: filterNote([decision]),
           }),
         };

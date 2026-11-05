@@ -4,8 +4,8 @@
 //   npm run testers -- add someone@example.com [another@example.com ...]
 //   npm run testers -- remove someone@example.com
 //
-// Testers also need to be added as Google "test users" for the Gmail address they'll connect
-// (Google Cloud console → OAuth consent screen → Audience → Test users).
+// While the Google OAuth app is in Testing mode, testers also need adding as Google "test users"
+// for the Gmail address they'll connect. In production, as now, this list is all that's needed.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -36,7 +36,6 @@ if (cmd === "list") {
     else await accounts.disallow(e);
     console.log(`${cmd === "add" ? "added" : "removed"} ${e.toLowerCase()}`);
   }
-  if (cmd === "add") console.log("Remember: add their Gmail address as a Google test user too.");
 } else {
   console.log("Usage: npm run testers -- list | add <email>... | remove <email>...");
   process.exit(1);

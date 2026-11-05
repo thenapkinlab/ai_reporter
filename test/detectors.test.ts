@@ -77,3 +77,24 @@ describe("redact", () => {
     expect(detect("card 4111 1111 1111 1111")[0]?.masked).toBe("••••1111");
   });
 });
+
+describe("links", () => {
+  const types = (text: string) => detect(text).map((h) => h.type);
+  const token = "aB3dE5gH7jK9mN1pQ3sT5vX7";
+
+  it("ignores tokens in tracking and unsubscribe links", () => {
+    expect(types(`https://mail.shop.example/unsubscribe?token=${token}`)).toEqual([]);
+    expect(types(`https://t.shop.example/click?utm_source=mail&token=${token}`)).toEqual([]);
+  });
+
+  it("still catches tokens in login and reset links, and outside links", () => {
+    expect(types(`https://app.example/reset-password?token=${token}`)).toContain("password");
+    expect(types(`https://app.example/login?token=${token}`)).toContain("secret");
+    expect(types(`Your token: ${token}`)).toContain("secret");
+  });
+
+  it("doesn't read a link parameter as a government ID, but still reads a labelled one", () => {
+    expect(types("https://promo.example/offer?nie=AB12345CD")).toEqual([]);
+    expect(types("NIE: AB12345CD")).toContain("id_number");
+  });
+});

@@ -33,7 +33,7 @@ Only emails on the tester allow list can sign in to the dashboard or use the con
 "invite-only" page and nothing about them is stored. Removing someone takes effect on their next request.
 
 ```bash
-npm run testers -- add tester@example.com     # also add their Gmail address as a Google test user
+npm run testers -- add tester@example.com     # the email they sign in with
 npm run testers -- list
 npm run testers -- remove tester@example.com
 ```
@@ -292,11 +292,11 @@ MTSamples' original terms are unclear, so it's for internal benchmarking only an
    (`authkitDomain`, `workosClientId`) and the email addresses for alarms and the testers' contact.
 5. After the first deploy, add the redirect URI `<GatewayUrl>auth/callback`.
 
-### 3. Google Cloud (free; Testing mode allows up to 100 test users)
+### 3. Google Cloud (free; an unverified app is limited to about 100 users)
 
 1. Create a project, then enable the **Gmail API**.
-2. OAuth consent screen: External, **Testing**, add each tester's Google account as a test user,
-   add the scope `.../auth/gmail.readonly`.
+2. OAuth consent screen: External. In **Testing** mode, add each tester's Google account as a test user; once published, testers only need adding with `npm run testers`.
+   Add the scope `.../auth/gmail.readonly`.
 3. Credentials → Create OAuth client ID → **Web application**. After the first deploy, add the redirect URI
    `<GatewayUrl>gmail/callback`.
 

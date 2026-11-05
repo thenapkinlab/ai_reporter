@@ -73,6 +73,23 @@ export function computeSignals(domain: string, text: string, hits: Hit[]): Signa
   return { financial, medical, financialDomain, medicalDomain, reasons };
 }
 
+// Attachment names that say what the document is. Contents are never opened, but the name alone can reveal this.
+const SENSITIVE_DOCUMENT = new RegExp(
+  String.raw`(?<![a-z0-9])(?:` +
+    [
+      "passport", String.raw`driving[ _.-]*licen[cs]e`, String.raw`national[ _.-]*id`, "aadhaar", "naric", "enic", "ecctis",
+      String.raw`(?:birth|marriage|degree)[ _.-]*certificate`, "p45", "p60", String.raw`w-?2`, "payslip", String.raw`pay[ _.-]*slip`,
+      String.raw`salary[ _.-]*slip`, String.raw`tax[ _.-]*return`, String.raw`bank[ _.-]*statement`, String.raw`medical[ _.-]*report`,
+      String.raw`lab[ _.-]*report`, "prescription", String.raw`discharge[ _.-]*summary`,
+    ].join("|") +
+    String.raw`)(?![a-z0-9])`,
+  "i",
+);
+
+export function sensitiveDocumentName(filename: string): boolean {
+  return SENSITIVE_DOCUMENT.test(filename);
+}
+
 /** True when an email has any hint worth asking the model about. */
 export function isCandidate(s: Signals, hasAttachments: boolean): boolean {
   return s.financialDomain || s.medicalDomain || s.financial > 0 || s.medical > 0 || hasAttachments;
