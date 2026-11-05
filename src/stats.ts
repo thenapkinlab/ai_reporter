@@ -21,7 +21,7 @@ export function dailyStats(items: Item[], now: Date): DailyStats {
   const runsBy = new Map<string, number[]>();
   const s: DailyStats = {
     searches_1d: 0, reads_1d: 0, emails_1d: 0, shared_1d: 0, redacted_1d: 0, withheld_1d: 0,
-    claude_runs_1d: 0, chatgpt_runs_1d: 0, gemini_runs_1d: 0, perplexity_runs_1d: 0, other_assistant_runs_1d: 0, background_runs_1d: 0, failed_runs_1d: 0,
+    claude_runs_1d: 0, chatgpt_runs_1d: 0, gemini_runs_1d: 0, perplexity_runs_1d: 0, muse_runs_1d: 0, other_assistant_runs_1d: 0, background_runs_1d: 0, failed_runs_1d: 0,
     feedback_release_1d: 0, feedback_keep_1d: 0, feedback_leak_1d: 0,
   };
   for (const it of items) {
@@ -45,6 +45,7 @@ export function dailyStats(items: Item[], now: Date): DailyStats {
       else if (it.assistant === "chatgpt") s.chatgpt_runs_1d!++;
       else if (it.assistant === "gemini") s.gemini_runs_1d!++;
       else if (it.assistant === "perplexity") s.perplexity_runs_1d!++;
+      else if (it.assistant === "muse") s.muse_runs_1d!++;
       else s.other_assistant_runs_1d!++;
       if (it.runType === "background_likely") s.background_runs_1d!++;
       if (it.failure) s.failed_runs_1d!++;

@@ -5,7 +5,7 @@ import type { Reservation } from "../limits";
 import type { Category } from "../filter/classifier";
 import type { Decision, LabelCache, Policy } from "../filter/engine";
 
-export type Assistant = "claude" | "chatgpt" | "gemini" | "perplexity" | "unknown";
+export type Assistant = "claude" | "chatgpt" | "gemini" | "perplexity" | "muse" | "unknown";
 export type RunType = "background_likely" | "unknown";
 
 export interface RunMeta {

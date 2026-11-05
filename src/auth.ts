@@ -72,6 +72,7 @@ export function identifyAssistant(clientId: string | null, userAgent: string | n
   if (/openai|chatgpt/.test(hay)) return "chatgpt";
   if (/claude|anthropic/.test(hay)) return "claude";
   if (/perplexity/.test(hay)) return "perplexity";
+  if (/\bmuse\b/.test(hay)) return "muse";
   if (/gemini|google/.test(hay)) return "gemini";
   return "unknown";
 }

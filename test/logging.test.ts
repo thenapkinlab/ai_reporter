@@ -91,12 +91,14 @@ describe("assistants and guide", () => {
     expect(identifyAssistant("https://chatgpt.com/x", null)).toBe("chatgpt");
     expect(identifyAssistant(null, "Google-Gemini")).toBe("gemini");
     expect(identifyAssistant(null, "Perplexity-User")).toBe("perplexity");
+    expect(identifyAssistant(null, "Muse-Code/1.0")).toBe("muse");
+    expect(identifyAssistant(null, "museum-bot")).toBe("unknown");
     expect(identifyAssistant(null, "something-else")).toBe("unknown");
   });
 
   it("guides testers through every target assistant, and says which are untested", () => {
     const g = guidePage("https://x.example/mcp", "hi@x.example");
-    for (const a of ["Claude", "ChatGPT", "Gemini", "Perplexity"]) expect(g).toContain(a);
+    for (const a of ["Claude", "ChatGPT", "Gemini", "Perplexity", "Muse"]) expect(g).toContain(a);
     expect(g).toContain("https://x.example/mcp");
     expect(g).toContain("Not tested yet");
     expect(g).toContain("hi@x.example");

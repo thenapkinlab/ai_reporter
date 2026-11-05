@@ -174,7 +174,7 @@ export function guidePage(mcpUrl: string, contactEmail: string | null): string {
      </ol>
 
      <h2>3. Add the connector to your assistant</h2>
-     <p>Claude is the only assistant we've tested. For the others, you're finding out with us: menus change often, so tell us if a step doesn't match.</p>
+     <p>Claude is the only assistant we've tested, and Muse support is the least certain. For the others, you're finding out with us: menus change often, so tell us if a step doesn't match.</p>
      ${assistantSteps(mcpUrl)}
      <div class="notice"><b>Don't skip turning off the built-in Gmail connector.</b> If it stays on, your assistant can read your email without going through the filter.</div>
 
@@ -273,6 +273,12 @@ function assistantSteps(mcpUrl: string): string {
        <li>Open <b>Plugins</b> in the sidebar and select <b>Add custom</b>. This may need a paid plan.</li>
        <li>Name it "${BRAND}", paste ${url}, and sign in with your invited email when asked.</li>
        <li><b>Turn off Perplexity's built-in Gmail connector</b>, if you've added it.</li>
+     </ol>
+     <h3>Muse <span class="chip">Not tested yet</span></h3>
+     <p>As far as we can tell, the Muse app doesn't offer custom connectors yet, so this may not work for you. Muse Code is reported to support them. Check its documentation, as these steps are unconfirmed.</p>
+     <ol>
+       <li>In Muse Code's settings file (<code>~/.config/muse/settings.json</code>), add a "${BRAND}" entry with ${url} under <code>mcp_servers</code>.</li>
+       <li>Restart Muse Code, and sign in with your invited email if asked.</li>
      </ol>`;
 }
 
@@ -303,7 +309,7 @@ export function setupPage(
   );
 }
 
-const ASSISTANT: Record<string, string> = { claude: "Claude", chatgpt: "ChatGPT", gemini: "Gemini", perplexity: "Perplexity", unknown: "Unknown assistant" };
+const ASSISTANT: Record<string, string> = { claude: "Claude", chatgpt: "ChatGPT", gemini: "Gemini", perplexity: "Perplexity", muse: "Muse", unknown: "Unknown assistant" };
 
 const FAILURE: Record<string, string> = {
   gmail_unavailable: "Gmail access lapsed: reconnect on Setup",

@@ -270,7 +270,7 @@ export class GatewayStack extends Stack {
         [
           new cloudwatch.GraphWidget({ title: "Funnel", left: ["users_total", "gmail_connected", "used_from_assistant", "active_7d", "active_1d"].map(daily), width: 8 }),
           new cloudwatch.GraphWidget({ title: "Emails per day", left: ["emails_1d", "shared_1d", "redacted_1d", "withheld_1d"].map(daily), width: 8 }),
-          new cloudwatch.GraphWidget({ title: "Requests per day", left: ["searches_1d", "reads_1d", "failed_runs_1d", "claude_runs_1d", "chatgpt_runs_1d", "gemini_runs_1d", "perplexity_runs_1d", "background_runs_1d"].map(daily), width: 8 }),
+          new cloudwatch.GraphWidget({ title: "Requests per day", left: ["searches_1d", "reads_1d", "failed_runs_1d", "claude_runs_1d", "chatgpt_runs_1d", "gemini_runs_1d", "perplexity_runs_1d", "muse_runs_1d", "background_runs_1d"].map(daily), width: 8 }),
         ],
         [
           new cloudwatch.GraphWidget({ title: "Sign-in and Gmail connection steps", left: [search('{AgentGateway,Step} MetricName="Funnel"', "Sum", 86400, "")], width: 12 }),
