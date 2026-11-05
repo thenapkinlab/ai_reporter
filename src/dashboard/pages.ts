@@ -102,7 +102,7 @@ export function notInvitedPage(email: string, contactEmail: string | null): stri
   );
 }
 
-export function noticePage(contactEmail: string | null): string {
+export function noticePage(contactEmail: string | null, technicalLog = false): string {
   return layout(
     "Beta notice",
     `<h1>Beta notice</h1>
@@ -141,6 +141,9 @@ export function noticePage(contactEmail: string | null): string {
      <p>The service runs on Amazon Web Services in Stockholm (EU), and the filter's AI model runs on Amazon Bedrock in EU regions.
      Sign-in uses WorkOS. Gmail access uses Google's API. Only you see your dashboard. The person running the beta can technically
      access the stored records above to operate the service, but never email content, because it isn't kept.</p>
+     ${technicalLog ? `<p>A technical log of each request goes to Langfuse, in the EU: the time, assistant, tool, result, counts of shared, redacted and
+     withheld emails, reason types (for example "medical"), timings and error types. It has no email content, searches, message IDs,
+     names, email addresses or account IDs.</p>` : ""}
 
      <h2>Leaving</h2>
      <p>Disconnect Gmail on Setup, or delete everything in Settings → "Delete my data", which also revokes our Google access. You can

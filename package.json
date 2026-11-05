@@ -26,6 +26,10 @@
     "jose": "^6.2.12"
   },
   "devDependencies": {
+    "@langfuse/client": "^6.1.1",
+    "@langfuse/otel": "^6.1.1",
+    "@langfuse/tracing": "^6.1.1",
+    "@opentelemetry/sdk-node": "^0.223.0",
     "@types/aws-lambda": "^8.10.164",
     "@types/node": "^26.6.4",
     "aws-cdk": "^2.1145.0",

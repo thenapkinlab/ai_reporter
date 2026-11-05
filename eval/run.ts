@@ -7,6 +7,7 @@
 //   npm run eval -- --models eu.amazon.nova-micro-v1:0,<other-id> --tags adversarial
 //   --batch 10 (emails per request, like the gateway)   --rpm 15 (stay under the account's request limit)
 //   npm run eval -- --holdout --docs 191           # disjoint public sample never used for tuning (eval:import -- --holdout)
+//   npm run eval -- --langfuse                     # also send results to Langfuse (see eval/langfuse.ts for what is sent)
 //
 // Needs AWS credentials (aws login) with Bedrock access in --region (default eu-north-1).
 
@@ -17,6 +18,7 @@ import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
 import { BedrockClassifier, type CallInfo } from "../src/aws/bedrock";
 import { PROMPT_VERSION, type Label } from "../src/filter/classifier";
 import type { RedactionCase } from "./import";
+import { checkLangfuse, uploadToLangfuse, type Split } from "./langfuse";
 import { accuracyByTag, confusion, outcomeFor, percentile, prepare, score, wilson, type EvalCase, type Outcome, type Prepared } from "./score";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -214,6 +216,8 @@ function loadCases(): EvalCase[] {
 }
 
 async function main() {
+  const langfuse = process.argv.includes("--langfuse");
+  if (langfuse) await checkLangfuse();
   const cases = loadCases();
   const models = (arg("models") ?? DEFAULT_MODELS.join(",")).split(",").filter(Boolean);
   const region = arg("region", "eu-north-1")!;
@@ -239,6 +243,16 @@ async function main() {
   const summaryEnd = md.indexOf("\n## ", md.indexOf("## Summary") + 5);
   console.log("\n" + (summaryEnd > 0 ? md.slice(0, summaryEnd) : md));
   console.log(`Full report: eval/results/${stamp}.md`);
+
+  if (langfuse) {
+    const split: Split = process.argv.includes("--test") ? "test" : process.argv.includes("--holdout") ? "holdout" : "dev";
+    try {
+      await uploadToLangfuse(split, stamp, threshold, prepared, runs.map((run) => ({ run, outcomes: outcomes(run, prepared, threshold) })));
+      console.log(`Langfuse upload finished (${split}): check the run appears there, the SDK doesn't report every failure.`);
+    } catch (e) {
+      console.error(`Langfuse upload failed, the report above is unaffected: ${e instanceof Error ? e.message : e}`);
+    }
+  }
 }
 
 main().catch((e) => {

@@ -1,6 +1,8 @@
 // Runtime configuration. The Lambda entry point fills secrets from SSM Parameter Store;
 // the local dev server fills them with throwaway values.
 
+import type { LangfuseKeys } from "./trace";
+
 export interface Config {
   authkitDomain: string;
   workosClientId: string;
@@ -20,6 +22,8 @@ export interface Config {
   inviteOnly?: boolean;
   /** Where testers can reach the person running the beta (shown on the notice and guide). */
   contactEmail?: string;
+  /** Sends a technical log with no content to Langfuse (src/trace.ts). Off when unset. */
+  langfuse?: LangfuseKeys;
 }
 
 export interface Limits {

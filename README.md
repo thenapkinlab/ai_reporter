@@ -165,6 +165,16 @@ curl -s -X POST http://localhost:8787/mcp -H 'authorization: Bearer dev' -H 'x-d
 `npm test` runs the tests. `npm run typecheck` type-checks. `npm run synth` builds the CloudFormation template
 without deploying.
 
+## Technical log in Langfuse (optional)
+
+Add `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` under the SSM prefix (use a separate Langfuse project from the
+benchmarks) and each tool call sends one record to Langfuse. It's off without the keys; new Lambda instances pick them up.
+
+Sent: tool, assistant, outcome, prompt version, counts of shared/redacted/withheld emails, reason types, timings, error type
+and reference. Never sent: user IDs, email addresses, searches, message IDs, senders, subjects, bodies or model output.
+`src/trace.ts` builds each record from numbers and fixed lists, so free text can't get in. Requests wait up to 800 ms for
+the send, and a failure is only logged.
+
 ## Evaluate the classifier
 
 `eval/dataset.json` holds ~90 synthetic, labelled emails: clear and hard cases, look-alikes that must not be
@@ -189,6 +199,16 @@ The report (`eval/results/<timestamp>.md`) shows, per model (positive = should b
 
 plus a threshold sweep (recall and FPR), accuracy by case type, the confusion matrix, and every false negative
 and false positive. The prompt version is stamped on each report.
+
+### Compare runs in Langfuse (optional)
+
+`npm run eval -- --langfuse` also sends the results to [Langfuse](https://langfuse.com), to compare models and prompt
+versions side by side. Put `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in `.env` (git-ignored). This covers
+benchmarks only: the SDK is a dev dependency. The gateway's own technical log is separate (see below).
+
+No email text is sent, not even from made-up cases. Dev runs send case IDs, tags, decisions and scores; validation and
+test send run totals only, so their mistakes can't be read. Look a case's text up by ID in `eval/dataset.json` or
+`eval/external/`.
 
 ## Evaluate the redactor
 

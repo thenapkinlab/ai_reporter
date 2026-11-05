@@ -11,6 +11,7 @@ import { agentMessage, classifyError, logError } from "./logging";
 import { countMetric, emit } from "./metrics";
 import { randomId } from "./crypto";
 import { newRunId, type RunMeta, type UserStore } from "./store/types";
+import type { Tracer } from "./trace";
 
 const CONCURRENCY = 5;
 
@@ -39,6 +40,7 @@ export class GatewayService implements ToolBackend {
     private meta: Omit<RunMeta, "tool" | "query">,
     private limits: Limits = DEFAULT_LIMITS,
     private now: () => Date = () => new Date(),
+    private trace?: Tracer,
   ) {}
 
   private async record(tool: string, query: string, decisions: Decision[]) {
@@ -57,6 +59,7 @@ export class GatewayService implements ToolBackend {
     const started = Date.now();
     const t: Timing = { gmailMs: 0, filterMs: 0 };
     let outcome: CallOutcome = "error";
+    let failure: { errorType: string; errorRef: string } | undefined;
     try {
       const r = await run(t);
       outcome = r.outcome;
@@ -65,6 +68,7 @@ export class GatewayService implements ToolBackend {
     } catch (e) {
       const ref = logError("tool_failed", e, { tool });
       const { type } = classifyError(e);
+      failure = { errorType: type, errorRef: ref };
       countMetric("ToolFailures");
       await this.recordFailure(tool, query, type, ref);
       return toolError(agentMessage(type, ref));
@@ -79,6 +83,7 @@ export class GatewayService implements ToolBackend {
           ],
           { Tool: tool },
         );
+      await this.trace?.({ tool, outcome, assistant: this.meta.assistant, totalMs: Date.now() - started, gmailMs: t.gmailMs, filterMs: t.filterMs, decisions: t.decisions, ...failure });
     }
   }
 
@@ -92,7 +97,7 @@ export class GatewayService implements ToolBackend {
     }
   }
 
-  private async timed<T>(t: Timing, key: keyof Timing, fn: () => Promise<T>): Promise<T> {
+  private async timed<T>(t: Timing, key: "gmailMs" | "filterMs", fn: () => Promise<T>): Promise<T> {
     const s = Date.now();
     try {
       return await fn();
@@ -125,6 +130,7 @@ export class GatewayService implements ToolBackend {
       const out = await this.withBudget(page.ids, async (ids) => {
         const emails = await this.timed(t, "gmailMs", () => mapLimit(ids, CONCURRENCY, (id) => this.mailbox.get(id)));
         const decisions = await this.timed(t, "filterMs", () => processEmails(emails, this.deps));
+        t.decisions = decisions;
         await this.record("search_email", query, decisions);
         return decisions;
       });
@@ -158,6 +164,7 @@ export class GatewayService implements ToolBackend {
       const out = await this.withBudget([messageId], async () => {
         const email = await this.timed(t, "gmailMs", () => this.mailbox.get(messageId));
         const decision = await this.timed(t, "filterMs", () => processEmail(email, this.deps));
+        t.decisions = [decision];
         await this.record("read_email", messageId, [decision]);
         return decision;
       });
@@ -184,6 +191,7 @@ type CallOutcome = "ok" | "limit" | "busy" | "error";
 interface Timing {
   gmailMs: number;
   filterMs: number;
+  decisions?: Decision[];
 }
 type Budgeted<T> = { result: T; reservation: Reservation } | { refused: ToolResult; outcome: CallOutcome };
 
