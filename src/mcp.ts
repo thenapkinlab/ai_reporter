@@ -1,6 +1,8 @@
 // Minimal stateless MCP server over Streamable HTTP (JSON responses, no sessions, no SSE).
 // Hand-written so it runs on Workers without the SDK's Node-only schema validator.
 
+import { agentMessage, classifyError, logError } from "./logging";
+
 export const SUPPORTED_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"];
 export const SERVER_INFO = { name: "private-gmail-gateway", version: "0.1.0" };
 
@@ -99,7 +101,8 @@ async function callTool(backend: ToolBackend, params: Record<string, unknown>): 
     }
     return toolError(`Unknown tool: ${String(name)}`);
   } catch (e) {
-    return toolError(e instanceof Error ? e.message : "Tool failed");
+    const ref = logError("tool_failed", e, { tool: String(name).slice(0, 40) });
+    return toolError(agentMessage(classifyError(e).type, ref));
   }
 }
 

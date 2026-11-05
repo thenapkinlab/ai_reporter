@@ -16,6 +16,7 @@ import {
   type Label,
   type SensitiveItem,
 } from "./classifier";
+import { logError, logEvent } from "../logging";
 import { redactEmail } from "./redactor";
 import { senderDomain, type Email } from "../mail";
 
@@ -204,6 +205,7 @@ export async function processEmails(emails: Email[], deps: EngineDeps): Promise<
       if (missing.length) {
         const retry = await ask(classifier, missing.map((j) => inputs[j]!));
         missing.forEach((j, k) => (labels[j] = retry[k] ?? null));
+        logEvent("model_retry", { asked: missing.length, stillUnanswered: labels.filter((l) => !l).length });
       }
       for (let j = 0; j < chunk.length; j++) {
         const { pe, i } = chunk[j]!;
@@ -226,9 +228,18 @@ async function ask(classifier: Classifier, inputs: ClassifyInput[]): Promise<(La
   try {
     return inputs.length > 1 && classifier.classifyBatch
       ? await classifier.classifyBatch(inputs)
-      : await Promise.all(inputs.map((x) => classifier.classify(x).catch((e) => (e instanceof ModelBusyError ? Promise.reject(e) : null))));
+      : await Promise.all(
+          inputs.map((x) =>
+            classifier.classify(x).catch((e) => {
+              if (e instanceof ModelBusyError) throw e;
+              logError("model_request_failed", e, { emails: 1 });
+              return null;
+            }),
+          ),
+        );
   } catch (e) {
     if (e instanceof ModelBusyError) throw e;
+    logError("model_request_failed", e, { emails: inputs.length });
     return inputs.map(() => null);
   }
 }

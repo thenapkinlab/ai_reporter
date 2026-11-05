@@ -5,7 +5,7 @@ import type { Reservation } from "../limits";
 import type { Category } from "../filter/classifier";
 import type { Decision, LabelCache, Policy } from "../filter/engine";
 
-export type Assistant = "claude" | "chatgpt" | "unknown";
+export type Assistant = "claude" | "chatgpt" | "gemini" | "perplexity" | "unknown";
 export type RunType = "background_likely" | "unknown";
 
 export interface RunMeta {
@@ -27,6 +27,10 @@ export interface RunRow {
   redacted_count: number;
   withheld_count: number;
   created_at: string;
+  /** Why the request failed (a fixed type, never error text); null when it worked. */
+  failure: string | null;
+  /** Reference shared with the assistant and the logs. */
+  error_ref: string | null;
 }
 
 /** One email touched by a run. Only its ID and the decision are kept, for 7 days. */
@@ -59,6 +63,8 @@ export interface UserStore {
   saveSettings(medical: boolean, financial: boolean): Promise<void>;
   labelCache(): LabelCache;
   recordRun(runId: string, meta: RunMeta, decisions: Decision[], now: Date): Promise<void>;
+  /** Records a request that failed, so it shows in Activity. `failure` is a fixed type, never error text. */
+  recordFailure(runId: string, meta: RunMeta, failure: string, ref: string | null, now: Date): Promise<void>;
   recentRuns(limit?: number): Promise<RunRow[]>;
   run(runId: string): Promise<{ run: RunRow; items: RunItemRow[] } | null>;
   totals(days?: number, now?: Date): Promise<Totals>;

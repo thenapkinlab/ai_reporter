@@ -13,6 +13,7 @@ import {
   type Label,
 } from "../filter/classifier";
 import { randomId } from "../crypto";
+import { logEvent } from "../logging";
 
 function text(blocks: ContentBlock[] | undefined): string {
   return (blocks ?? []).map((b) => ("text" in b && b.text) || "").join("");
@@ -70,7 +71,11 @@ export class BedrockClassifier implements Classifier {
       outputTokens: r.usage?.outputTokens ?? 0,
       latencyMs: r.metrics?.latencyMs ?? 0,
     });
-    return parseBatchLabels(text(r.output?.message?.content), inputs.length);
+    const labels = parseBatchLabels(text(r.output?.message?.content), inputs.length);
+    const missing = labels.filter((l) => !l).length;
+    // Counts and the stop reason only, never the model's text: it can quote the email.
+    if (missing) logEvent("model_partial_answer", { missing, total: inputs.length, stopReason: r.stopReason, outputTokens: r.usage?.outputTokens });
+    return labels;
   }
 }
 

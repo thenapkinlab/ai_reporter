@@ -14,6 +14,8 @@ export type MetricName =
   | "ModelUnavailable"
   /** A request hit a user's 10-minute or daily email limit. */
   | "UserLimitReached"
+  /** A tool call that failed for a reason the operator should look at (not limits or a busy filter). */
+  | "ToolFailures"
   /** One MCP tool call, by Tool and Outcome. */
   | "ToolCalls"
   /** Timings of one tool call in milliseconds, by Tool: total, Gmail fetch, filter (classifier + redaction). */

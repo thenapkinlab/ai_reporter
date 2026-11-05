@@ -18,6 +18,7 @@ function fakeStore() {
     reserveEmails: real.reserveEmails.bind(real),
     releaseEmails: real.releaseEmails.bind(real),
     usageToday: real.usageToday.bind(real),
+    recordFailure: async () => {},
     recordRun: async (_id: string, meta: { tool: string; query: string | null }, decisions: Decision[]) => {
       runs.push({ tool: meta.tool, query: meta.query, decisions });
     },

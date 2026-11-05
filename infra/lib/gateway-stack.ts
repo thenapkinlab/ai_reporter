@@ -184,6 +184,7 @@ export class GatewayStack extends Stack {
       new cloudwatch.Metric({ namespace: "AgentGateway", metricName, statistic: "Sum", period });
     const alarms: [string, cloudwatch.IMetric, number, string][] = [
       ["ModelBusy", custom("ModelBusy", Duration.minutes(5)), 1, "Requests refused because the shared Bedrock budget was full. Ask AWS for a higher quota or lower usage."],
+      ["ToolFailures", custom("ToolFailures", Duration.hours(1)), 1, "Assistant requests failed: Gmail access lapsed or an unexpected error. Details and references are in the Logs group."],
       ["ModelUnavailable", custom("ModelUnavailable", Duration.minutes(5)), 1, "Emails withheld because the classifier didn't answer (errors or throttling)."],
       ["UserLimits", custom("UserLimitReached", Duration.hours(1)), 10, "Users hitting their email limits often: check for loops or raise the limits."],
       ["LambdaErrors", fn.metricErrors({ period: Duration.minutes(5), statistic: "Sum" }), 3, "Gateway Lambda errors."],
@@ -269,7 +270,7 @@ export class GatewayStack extends Stack {
         [
           new cloudwatch.GraphWidget({ title: "Funnel", left: ["users_total", "gmail_connected", "used_from_assistant", "active_7d", "active_1d"].map(daily), width: 8 }),
           new cloudwatch.GraphWidget({ title: "Emails per day", left: ["emails_1d", "shared_1d", "redacted_1d", "withheld_1d"].map(daily), width: 8 }),
-          new cloudwatch.GraphWidget({ title: "Requests per day", left: ["searches_1d", "reads_1d", "claude_runs_1d", "chatgpt_runs_1d", "background_runs_1d"].map(daily), width: 8 }),
+          new cloudwatch.GraphWidget({ title: "Requests per day", left: ["searches_1d", "reads_1d", "failed_runs_1d", "claude_runs_1d", "chatgpt_runs_1d", "gemini_runs_1d", "perplexity_runs_1d", "background_runs_1d"].map(daily), width: 8 }),
         ],
         [
           new cloudwatch.GraphWidget({ title: "Sign-in and Gmail connection steps", left: [search('{AgentGateway,Step} MetricName="Funnel"', "Sum", 86400, "")], width: 12 }),

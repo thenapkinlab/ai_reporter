@@ -71,6 +71,8 @@ export function identifyAssistant(clientId: string | null, userAgent: string | n
   const hay = `${clientId ?? ""} ${userAgent ?? ""}`.toLowerCase();
   if (/openai|chatgpt/.test(hay)) return "chatgpt";
   if (/claude|anthropic/.test(hay)) return "claude";
+  if (/perplexity/.test(hay)) return "perplexity";
+  if (/gemini|google/.test(hay)) return "gemini";
   return "unknown";
 }
 

@@ -56,6 +56,8 @@ function toRunRow(it: Item): RunRow {
     redacted_count: Number(it.redacted ?? 0),
     withheld_count: Number(it.withheld ?? 0),
     created_at: String(it.createdAt),
+    failure: (it.failure as string | undefined) ?? null,
+    error_ref: (it.errorRef as string | undefined) ?? null,
   };
 }
 
@@ -130,11 +132,38 @@ class TableUserStore implements UserStore {
     };
   }
 
-  async recordRun(runId: string, meta: RunMeta, decisions: Decision[], now: Date) {
+  private async priorRuns(meta: RunMeta, now: Date) {
     const since = new Date(now.getTime() - 8 * 86400000);
-    const prior = (await this.table.query(this.pk, { from: `RUN#${msKey(since)}`, to: "RUN#~", limit: 500 }))
+    return (await this.table.query(this.pk, { from: `RUN#${msKey(since)}`, to: "RUN#~", limit: 500 }))
       .filter((r) => r.assistant === meta.assistant && r.query === meta.query)
       .map((r) => new Date(String(r.createdAt)));
+  }
+
+  async recordFailure(runId: string, meta: RunMeta, failure: string, ref: string | null, now: Date) {
+    await this.table.put({
+      pk: this.pk,
+      sk: `RUN#${runId}`,
+      runId,
+      assistant: meta.assistant,
+      clientId: meta.clientId,
+      userAgent: meta.userAgent,
+      headerNames: meta.headerNames,
+      tool: meta.tool,
+      query: meta.query,
+      runType: inferRunType(meta.query, await this.priorRuns(meta, now), now),
+      shared: 0,
+      redacted: 0,
+      withheld: 0,
+      reasons: {},
+      failure,
+      ...(ref ? { errorRef: ref } : {}),
+      createdAt: now.toISOString(),
+      expiresAt: expiresAt(now, RUN_DAYS),
+    });
+  }
+
+  async recordRun(runId: string, meta: RunMeta, decisions: Decision[], now: Date) {
+    const prior = await this.priorRuns(meta, now);
     const count = (a: string) => decisions.filter((d) => d.action === a).length;
     const reasons: Record<string, number> = {};
     for (const d of decisions) for (const b of d.because) reasons[b] = (reasons[b] ?? 0) + 1;

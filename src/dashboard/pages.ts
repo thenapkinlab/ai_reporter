@@ -48,6 +48,9 @@ export interface Nav {
   dev: boolean;
 }
 
+/** The name users see. Kept in one place so a rename is a one-line change. */
+const BRAND = "Private Gmail";
+
 /** AGPL-3.0 section 13: people using the service over the network can get its source. */
 export const SOURCE_URL = "https://github.com/thenapkinlab/ai_reporter";
 
@@ -61,7 +64,7 @@ export function layout(title: string, body: string, nav: Nav | null): string {
     : "";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)} · Private Gmail</title><style>${CSS}</style></head>
-<body><header><div class="bar"><span class="brand">Private Gmail</span>${navHtml}</div></header><main>${body}</main>
+<body><header><div class="bar"><span class="brand">${BRAND}</span>${navHtml}</div></header><main>${body}</main>
 <footer class="muted" style="max-width:960px;margin:24px auto;padding:0 16px">Open source under the AGPL-3.0:
 <a href="${SOURCE_URL}">source code</a> · <a href="/notice">beta notice</a> · <a href="/guide">tester guide</a></footer></body></html>`;
 }
@@ -149,50 +152,82 @@ export function noticePage(contactEmail: string | null): string {
 export function guidePage(mcpUrl: string, contactEmail: string | null): string {
   return layout(
     "Tester guide",
-    `<h1>Tester guide</h1>
-     <p>Thanks for testing! This gateway sits between your AI assistant and Gmail: it holds back medical and financial emails, removes
-     sensitive values from the rest, and shows you everything your assistant read. Setup takes about 5 minutes.</p>
+    `<h1>Tester onboarding guide</h1>
+     <p>Thanks for testing ${BRAND}. It sits between your AI assistant and your Gmail: it holds back medical and financial emails,
+     removes sensitive values from the rest, and shows you what your assistant read. Setup takes about 10 minutes.</p>
+     <p>Before you start, read the <a href="/notice">beta notice</a>. This is an early experiment and the filter can make mistakes.</p>
 
-     <h2>Before you start</h2>
+     <h2>1. Get invited</h2>
+     <p>Send ${contact(contactEmail)}:</p>
      <ul>
-       <li>A Gmail account, and Claude or ChatGPT (ChatGPT needs Plus or higher and Developer Mode for custom connectors).</li>
-       <li>An invite: send ${contact(contactEmail)} the email you'll sign in with and the Gmail address you'll connect.
-       Wait for a confirmation before setting up; Google blocks addresses that haven't been added yet.</li>
-       <li>Read the <a href="/notice">beta notice</a>.</li>
+       <li>the email you'll sign in with;</li>
+       <li>the Gmail address you'll connect;</li>
+       <li>which assistant you use.</li>
      </ul>
+     <p>Wait for a confirmation first. Google and the sign-in page both block addresses that haven't been added.</p>
 
-     <h2>Setup</h2>
+     <h2>2. Sign in and connect Gmail</h2>
      <ol>
-       <li><b>Sign in</b> on the <a href="/">home page</a> with your invited email.</li>
-       <li><b>Connect Gmail</b> on the Setup page. Google will warn that it "hasn't verified this app": choose
-       <b>Advanced → Go to … (unsafe)</b> and allow read-only access. That's expected for a small beta.</li>
-       <li><b>Add the connector</b> to your assistant with this URL: <code>${esc(mcpUrl)}</code>. The Setup page has step-by-step
-       instructions for Claude and ChatGPT. Sign in with the same account when your assistant asks.</li>
-       <li><b>Turn off your assistant's built-in Gmail connector.</b> Otherwise it can read your email without going through the filter.</li>
+       <li><a href="/login">Sign in</a> with your invited email.</li>
+       <li>On <b>Setup</b>, tick that you've read the beta notice and click <b>Connect Gmail</b>.</li>
+       <li>Google will say it "hasn't verified this app". That's expected for a small beta: choose <b>Advanced → Go to … (unsafe)</b>, then allow read-only access.</li>
      </ol>
 
-     <h2>Try it</h2>
+     <h2>3. Add the connector to your assistant</h2>
+     <p>Claude is the only assistant we've tested. For the others, you're finding out with us: menus change often, so tell us if a step doesn't match.</p>
+     ${assistantSteps(mcpUrl)}
+     <div class="notice"><b>Don't skip turning off the built-in Gmail connector.</b> If it stays on, your assistant can read your email without going through the filter.</div>
+
+     <h2>4. Check it works</h2>
+     <ol>
+       <li>Ask your assistant: "Using ${BRAND}, how many emails did I get yesterday?"</li>
+       <li>Open <a href="/activity">Activity</a>. Your request should appear within a few seconds, with the assistant's name.</li>
+       <li>If it doesn't appear, your assistant probably used another route. Check step 3.</li>
+     </ol>
+
+     <h2>5. Try these</h2>
+     <div class="scroll"><table>
+       <thead><tr><th>Ask</th><th>What should happen</th></tr></thead>
+       <tbody>
+         <tr><td>"When is my next flight or booking?"</td><td>Trip details come through. Dates of birth and passport numbers show as <code>[removed: …]</code>.</td></tr>
+         <tr><td>"Where are my recent orders?"</td><td>Order details come through. Your home address shows as <code>[removed: home address]</code>.</td></tr>
+         <tr><td>"Show my latest verification codes."</td><td>The code is removed, or the email is withheld if it's from your bank.</td></tr>
+         <tr><td>"Show my latest bank statement."</td><td>Withheld. Your assistant is told how many emails were held back and why.</td></tr>
+         <tr><td>"Any test results or GP letters?"</td><td>Withheld.</td></tr>
+         <tr><td>Your usual questions and scheduled tasks</td><td>This is the most useful test of all.</td></tr>
+       </tbody>
+     </table></div>
+
+     <h2>6. Tell us what happens</h2>
+     <p>On <a href="/activity">Activity</a>, open a request's <b>Emails</b> and use <b>Open in Gmail</b> to compare.</p>
      <ul>
-       <li>"When is my next flight?" or "Find my hotel bookings from the last 2 months."</li>
-       <li>"Where are my recent orders?" Delivery addresses should show as <code>[removed: home address]</code>.</li>
-       <li>"Show my latest bank statement." It should be withheld.</li>
-       <li>Ask about newsletters, receipts, meetings: anything you'd normally ask.</li>
+       <li><b>Something sensitive got through:</b> press <b>Something leaked</b> and pick the type. Only the type is recorded.</li>
+       <li><b>Something was withheld that shouldn't have been:</b> press <b>Release next time</b>.</li>
+       <li><b>Anything else</b> (confusing steps, slow answers, ideas): email ${contact(contactEmail)}. Describe the type of email, and <b>please don't forward or paste its contents</b>.</li>
      </ul>
 
-     <h2>Tell us what happens</h2>
-     <ul>
-       <li><b>Activity</b> shows every request and every email your assistant read, with "Open in Gmail" to compare.</li>
-       <li>If something sensitive got through: <b>Something leaked</b>, and pick what it was. Only the type is recorded.</li>
-       <li>If something was withheld that shouldn't have been: <b>Release next time</b>.</li>
-       <li>Anything else (confusing steps, slow answers, ideas): email ${contact(contactEmail)}.</li>
-     </ul>
+     <h2>If something goes wrong</h2>
+     <div class="scroll"><table>
+       <thead><tr><th>What you see</th><th>What to do</th></tr></thead>
+       <tbody>
+         <tr><td>"This beta is invite-only"</td><td>Sign in with the email you sent us, or ask us to add it.</td></tr>
+         <tr><td>Google says "Access blocked"</td><td>Your Gmail address isn't on Google's test list yet. Tell us the address.</td></tr>
+         <tr><td>"Couldn't reach Gmail" or a red notice in Activity</td><td>Google access has lapsed, which can happen during this beta. Disconnect and reconnect Gmail on <a href="/setup">Setup</a>.</td></tr>
+         <tr><td>"The privacy filter is busy" or "couldn't run"</td><td>Nothing was shared. Try again in a minute.</td></tr>
+         <tr><td>"Usage limit reached"</td><td>The limits are 100 emails per 10 minutes and 500 per day. Try again later.</td></tr>
+         <tr><td>Your assistant can't find the connector</td><td>Check it's turned on for that chat, and that your plan allows custom connectors.</td></tr>
+         <tr><td>An error with a reference</td><td>Send us the reference. It lets us find the problem without seeing your email.</td></tr>
+       </tbody>
+     </table></div>
 
      <h2>Good to know</h2>
      <ul>
-       <li>Limits: 100 emails per 10 minutes and 500 per day. If the filter is busy, your assistant will say so; try again in a minute.</li>
-       <li>Attachment contents are never shared, only their names.</li>
-       <li>Delete everything any time in Settings.</li>
-     </ul>`,
+       <li>Attachment contents are never opened or shared, only their names.</li>
+       <li>Other connected tools, and your assistant's own web search, don't go through this filter.</li>
+     </ul>
+
+     <h2>Leaving</h2>
+     <p>In <b>Settings → Delete my data</b> you can delete everything, which also revokes our Google access. Remove the connector from your assistant too.</p>`,
     null,
   );
 }
@@ -204,6 +239,41 @@ export function devLoginPage(): string {
      <form method="post" action="/dev-login"><button class="btn primary">Continue as dev user</button></form>`,
     null,
   );
+}
+
+const STEP_URL = `style="overflow-wrap:anywhere"`;
+
+/** How to add the connector to each assistant. These menus change often, so a step that doesn't match should be reported. */
+function assistantSteps(mcpUrl: string): string {
+  const url = `<code ${STEP_URL}>${esc(mcpUrl)}</code>`;
+  return `<h3>Claude <span class="chip c-shared">Tested</span></h3>
+     <ol>
+       <li>Open Claude: <b>Settings → Connectors → Add custom connector</b>.</li>
+       <li>Name it "${BRAND}" and paste ${url}, then click Add.</li>
+       <li>Sign in with your invited email when Claude asks, and approve.</li>
+       <li><b>Turn off Claude's built-in Gmail connector</b>, and remove Claude in Google Account → Security → Third-party connections.</li>
+     </ol>
+     <h3>ChatGPT <span class="chip">Not tested yet</span></h3>
+     <ol>
+       <li>On chatgpt.com, open <b>Settings → Apps &amp; Connectors → Advanced</b> and turn on <b>Developer mode</b>. If it isn't there, look under Settings → Security. Availability depends on your plan, and a work account's admin may need to allow it.</li>
+       <li>Back in Apps &amp; Connectors, click <b>Create</b>, name it "${BRAND}", paste ${url}, choose <b>OAuth</b> and save.</li>
+       <li>Sign in with your invited email when asked, and approve.</li>
+       <li>In a new chat, pick the connector from the tools menu.</li>
+       <li><b>Disconnect ChatGPT's built-in Gmail</b>, and remove OpenAI in Google Account → Security → Third-party connections.</li>
+     </ol>
+     <h3>Gemini app <span class="chip">Not tested yet</span></h3>
+     <ol>
+       <li>On <b>gemini.google.com</b> (web only, in English), open <b>Settings → Connected Apps</b>. Custom apps depend on your account and location, and may need Keep Activity turned on.</li>
+       <li>Under <b>Custom apps</b>, add a new app, paste ${url} and click Next.</li>
+       <li>Approve the connection and sign in with your invited email. The app then also shows in the Gemini mobile app.</li>
+       <li><b>Turn off Gemini's built-in Gmail access</b> in Connected Apps, because that route doesn't go through this filter.</li>
+     </ol>
+     <h3>Perplexity <span class="chip">Not tested yet</span></h3>
+     <ol>
+       <li>Open <b>Plugins</b> in the sidebar and select <b>Add custom</b>. This may need a paid plan.</li>
+       <li>Name it "${BRAND}", paste ${url}, and sign in with your invited email when asked.</li>
+       <li><b>Turn off Perplexity's built-in Gmail connector</b>, if you've added it.</li>
+     </ol>`;
 }
 
 export function setupPage(
@@ -227,27 +297,31 @@ export function setupPage(
      <div class="card"><b>Step 2. Your connector URL</b>
        <p><code id="u">${esc(mcpUrl)}</code></p>
        <p class="muted">Paste this into your assistant as a custom connector.</p></div>
-     <h2>Claude</h2>
-     <ol>
-       <li>Open Claude: <b>Settings → Connectors → Add custom connector</b>.</li>
-       <li>Name it "Private Gmail", paste the URL above, click Add.</li>
-       <li>Sign in with this same account when Claude asks, and approve.</li>
-       <li><b>Turn off Claude's built-in Gmail connector</b>, and remove Claude in Google Account → Security → Third-party connections.</li>
-     </ol>
-     <h2>ChatGPT (Plus or higher, on the web)</h2>
-     <ol>
-       <li>Open chatgpt.com: <b>Settings → Apps → Advanced</b> and turn on <b>Developer Mode</b>.</li>
-       <li>Click <b>Create</b>, name it "Private Gmail", paste the URL above, choose OAuth, save.</li>
-       <li>Sign in with this same account when ChatGPT asks, and approve.</li>
-       <li>In a chat, pick the connector from the <b>+</b> menu.</li>
-       <li><b>Disconnect ChatGPT's built-in Gmail</b> in Settings → Apps, and remove OpenAI in Google Account → Security → Third-party connections.</li>
-     </ol>
+     ${assistantSteps(mcpUrl)}
      <div class="notice">If an assistant's built-in Gmail stays connected, it can read your email without going through this filter.</div>`,
     nav,
   );
 }
 
-const ASSISTANT: Record<string, string> = { claude: "Claude", chatgpt: "ChatGPT", unknown: "Unknown assistant" };
+const ASSISTANT: Record<string, string> = { claude: "Claude", chatgpt: "ChatGPT", gemini: "Gemini", perplexity: "Perplexity", unknown: "Unknown assistant" };
+
+const FAILURE: Record<string, string> = {
+  gmail_unavailable: "Gmail access lapsed: reconnect on Setup",
+  gmail_auth_expired: "Gmail access lapsed: reconnect on Setup",
+  no_gmail: "Gmail wasn't connected",
+  limit: "Usage limit reached",
+  busy: "Filter busy, nothing was shared",
+  gmail_not_found: "Email not found",
+  gmail_rate_limited: "Gmail was limiting requests",
+  gmail_api: "Gmail returned an error",
+  model_throttled: "Filter couldn't run, nothing was shared",
+  model_timeout: "Filter couldn't run, nothing was shared",
+  model_access: "Filter couldn't run, nothing was shared",
+  model_unparseable: "Filter couldn't run, nothing was shared",
+  model_error: "Filter couldn't run, nothing was shared",
+};
+const failureLabel = (f: string) => FAILURE[f] ?? "The request failed";
+const needsReconnect = (f: string | null | undefined) => f === "gmail_unavailable" || f === "gmail_auth_expired";
 
 function when(iso: string): string {
   const d = new Date(iso);
@@ -263,6 +337,7 @@ const ACTION_LABEL: Record<string, string> = { shared: "shared", redacted: "valu
 
 function runChips(r: RunRow): string {
   const c: string[] = [];
+  if (r.failure) c.push(`<span class="chip c-withheld">${esc(failureLabel(r.failure))}</span>`);
   if (r.run_type === "background_likely") c.push(`<span class="chip c-bg">background, likely</span>`);
   if (r.shared_count) c.push(`<span class="chip c-shared">${r.shared_count} shared</span>`);
   if (r.redacted_count) c.push(`<span class="chip c-redacted">${r.redacted_count} values removed</span>`);
@@ -297,6 +372,7 @@ export function activityPage(
     "Activity",
     `<h1>Activity</h1>
      ${gmailConnected ? "" : `<div class="notice">Gmail isn't connected yet. <a href="/setup">Finish setup</a>.</div>`}
+     ${gmailConnected && needsReconnect(runs[0]?.failure) ? `<div class="notice"><b>Your assistant can't reach Gmail.</b> Google access has lapsed, which can happen during this beta. <a href="/setup">Reconnect on Setup</a>.</div>` : ""}
      <p class="muted">Last 7 days${usage ? ` · today ${usage.today} of ${usage.perDay} emails checked (resets 00:00 UTC)` : ""}</p>
      <div class="tiles">
        <div class="tile"><b>${totals.read}</b><span>emails your assistants read</span></div>
@@ -347,7 +423,12 @@ export function runPage(nav: Nav, run: RunRow, items: RunItemRow[], gmailAddress
         <td><div class="row">${buttons}${fb}</div></td></tr>`;
     })
     .join("");
-  const body = items.length
+  const failed = run.failure
+    ? `<div class="notice"><b>${esc(failureLabel(run.failure))}.</b> No emails were shared in this request.${run.error_ref ? ` If you report it, quote reference <code>${esc(run.error_ref)}</code>.` : ""}</div>`
+    : "";
+  const body = run.failure
+    ? failed
+    : items.length
     ? `<div class="scroll"><table><thead><tr><th>Result</th><th>Why</th><th>Email</th><th>Your decision</th></tr></thead><tbody>${rows}</tbody></table></div>`
     : `<div class="card">Email details for this request have expired. We keep them for 7 days.</div>`;
   return layout(

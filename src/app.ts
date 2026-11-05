@@ -4,7 +4,10 @@
 import { authServerMetadata, identifyAssistant, protectedResourceMetadata, resourceUrl, unauthorized, verifyBearer } from "./auth";
 import { DEFAULT_LIMITS, type Config } from "./config";
 import { RateLimitedClassifier } from "./limits";
+import { logError } from "./logging";
 import { countMetric } from "./metrics";
+import { randomId } from "./crypto";
+import { newRunId } from "./store/types";
 import { LEAK_TYPES } from "./store/types";
 import type { TokenCipher } from "./crypto";
 import type { Classifier } from "./filter/classifier";
@@ -108,7 +111,7 @@ export function createApp(deps: AppDeps) {
       const mailbox = await mailboxFor(userId);
       if (!mailbox) {
         const msg = `Gmail isn't connected. Ask the user to connect it at ${url.origin}/setup.`;
-        backend = failing(msg, "no_gmail");
+        backend = failing(msg, "no_gmail", async (tool, query) => store.recordFailure(newRunId(new Date(), randomId()), { ...meta, tool, query }, "no_gmail", null, new Date()));
       } else {
         const engine: EngineDeps = {
           classifier,
@@ -118,20 +121,25 @@ export function createApp(deps: AppDeps) {
         backend = new GatewayService(mailbox, engine, store, meta, limits);
       }
     } catch (e) {
-      console.error("mailbox setup failed", e);
-      const msg = `Couldn't reach Gmail. Ask the user to reconnect it at ${url.origin}/setup.`;
-      backend = failing(msg, "gmail_unavailable");
+      const ref = logError("gmail_setup_failed", e);
+      const msg = `Couldn't reach Gmail. Ask the user to reconnect it at ${url.origin}/setup. Reference ${ref}.`;
+      backend = failing(msg, "gmail_unavailable", async (tool, query) => {
+        countMetric("ToolFailures");
+        await store.recordFailure(newRunId(new Date(), randomId()), { ...meta, tool, query }, "gmail_unavailable", ref, new Date());
+      });
     }
     return handleMcp(request, backend);
   }
 
   /** A backend whose tools only return `msg`, counted under `outcome`. */
-  function failing(msg: string, outcome: string): ToolBackend {
-    const fail = async (tool: string) => {
+  function failing(msg: string, outcome: string, record?: (tool: string, query: string) => Promise<void>): ToolBackend {
+    const fail = async (tool: string, query: string) => {
       countMetric("ToolCalls", 1, { Tool: tool, Outcome: outcome });
+      // Shown in the user's Activity. Not called for people who aren't invited: nothing is stored about them.
+      await record?.(tool, query).catch((e) => void logError("record_failure_failed", e, { tool }));
       return toolError(msg);
     };
-    return { searchEmail: () => fail("search_email"), readEmail: () => fail("read_email") };
+    return { searchEmail: (query) => fail("search_email", query), readEmail: (id) => fail("read_email", id) };
   }
 
   // ------------------------------------------------------------ dashboard
@@ -285,7 +293,7 @@ export function createApp(deps: AppDeps) {
         return html(notInvitedPage(session.email, cfg.contactEmail ?? null), 403, { "set-cookie": clearSessionCookie() });
       return await dashboard(request, url, session);
     } catch (e) {
-      console.error(e);
+      logError("request_failed", e, { route: path.split("/").slice(0, 2).join("/") });
       return html(messagePage("Something went wrong", "The request failed. Please try again.", null), 500);
     }
   }

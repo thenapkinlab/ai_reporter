@@ -7,6 +7,7 @@ import { DEFAULT_LIMITS, type Limits } from "./config";
 import { limitMessage, type Reservation } from "./limits";
 import { ModelBusyError, PROMPT_VERSION } from "./filter/classifier";
 import { MODEL_UNAVAILABLE } from "./filter/engine";
+import { agentMessage, classifyError, logError } from "./logging";
 import { countMetric, emit } from "./metrics";
 import { randomId } from "./crypto";
 import { newRunId, type RunMeta, type UserStore } from "./store/types";
@@ -51,15 +52,22 @@ export class GatewayService implements ToolBackend {
     await this.store.recordRun(newRunId(now, randomId()), { ...this.meta, tool, query }, decisions, now);
   }
 
-  /** Records the outcome and timings of one tool call (counts and milliseconds only). */
-  private async instrumented(tool: string, run: (t: Timing) => Promise<{ result: ToolResult; outcome: CallOutcome }>): Promise<ToolResult> {
+  /** Records the outcome and timings of one tool call (counts and milliseconds only), and any failure. */
+  private async instrumented(tool: string, query: string, run: (t: Timing) => Promise<{ result: ToolResult; outcome: CallOutcome }>): Promise<ToolResult> {
     const started = Date.now();
     const t: Timing = { gmailMs: 0, filterMs: 0 };
     let outcome: CallOutcome = "error";
     try {
       const r = await run(t);
       outcome = r.outcome;
+      if (r.result.isError) await this.recordFailure(tool, query, outcome, null);
       return r.result;
+    } catch (e) {
+      const ref = logError("tool_failed", e, { tool });
+      const { type } = classifyError(e);
+      countMetric("ToolFailures");
+      await this.recordFailure(tool, query, type, ref);
+      return toolError(agentMessage(type, ref));
     } finally {
       countMetric("ToolCalls", 1, { Tool: tool, Outcome: outcome });
       if (outcome === "ok")
@@ -71,6 +79,16 @@ export class GatewayService implements ToolBackend {
           ],
           { Tool: tool },
         );
+    }
+  }
+
+  /** Shows the failure in the user's Activity. Must never hide the original problem, so its own errors are only logged. */
+  private async recordFailure(tool: string, query: string, failure: string, ref: string | null) {
+    const now = this.now();
+    try {
+      await this.store.recordFailure(newRunId(now, randomId()), { ...this.meta, tool, query }, failure, ref, now);
+    } catch (e) {
+      logError("record_failure_failed", e, { tool });
     }
   }
 
@@ -102,7 +120,7 @@ export class GatewayService implements ToolBackend {
   }
 
   searchEmail(query: string, maxResults: number, pageToken?: string): Promise<ToolResult> {
-    return this.instrumented("search_email", async (t) => {
+    return this.instrumented("search_email", query, async (t) => {
       const page = await this.timed(t, "gmailMs", () => this.mailbox.search(query, maxResults, pageToken));
       const out = await this.withBudget(page.ids, async (ids) => {
         const emails = await this.timed(t, "gmailMs", () => mapLimit(ids, CONCURRENCY, (id) => this.mailbox.get(id)));
@@ -136,7 +154,7 @@ export class GatewayService implements ToolBackend {
   }
 
   readEmail(messageId: string): Promise<ToolResult> {
-    return this.instrumented("read_email", async (t) => {
+    return this.instrumented("read_email", messageId, async (t) => {
       const out = await this.withBudget([messageId], async () => {
         const email = await this.timed(t, "gmailMs", () => this.mailbox.get(messageId));
         const decision = await this.timed(t, "filterMs", () => processEmail(email, this.deps));
