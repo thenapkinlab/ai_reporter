@@ -11,9 +11,10 @@ import { toRequest, toResult } from "../src/platform/lambda";
 
 const ORIGIN = "http://localhost:8787";
 
-function devApp(dev = true) {
+function devApp(dev = true, addresses: { appOrigin?: string; siteOrigin?: string } = {}) {
   return createApp({
     config: {
+      ...addresses,
       authkitDomain: "https://example.authkit.app",
       workosClientId: "x",
       workosApiKey: "x",
@@ -166,3 +167,46 @@ describe("public pages", () => {
     expect(body).not.toContain("__");
   });
 });
+
+describe("separate app address", () => {
+  const APP = "https://app.warded.test";
+  const SITE = "https://warded.test";
+  const OLD = "https://old.lambda-url.on.aws";
+  const app = () => devApp(false, { appOrigin: APP, siteOrigin: SITE });
+  const open = (url: string) => app().handle(new Request(url));
+
+  it("keeps public pages on the site, and sends everything else to the app", async () => {
+    for (const p of ["/", "/privacy", "/guide", "/notice"]) expect((await open(`${SITE}${p}`)).status).toBe(200);
+    for (const p of ["/login", "/setup", "/activity"]) {
+      const res = await open(`${SITE}${p}`);
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe(`${APP}${p}`);
+    }
+  });
+
+  it("sends old links to the app, keeping their query", async () => {
+    expect((await open(`${OLD}/`)).headers.get("location")).toBe(`${APP}/`);
+    expect((await open(`${OLD}/guide`)).headers.get("location")).toBe(`${APP}/guide`);
+    expect((await open(`${OLD}/gmail/callback?state=a&code=b`)).headers.get("location")).toBe(`${APP}/gmail/callback?state=a&code=b`);
+  });
+
+  it("doesn't move connectors: /mcp and its metadata answer on every address", async () => {
+    for (const origin of [OLD, SITE, APP]) {
+      const res = await app().handle(new Request(`${origin}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) }));
+      expect(res.status).toBe(401);
+      const meta = (await (await open(`${origin}/.well-known/oauth-protected-resource`)).json()) as { resource: string };
+      expect(meta.resource).toBe(`${origin}/mcp`);
+    }
+  });
+
+  it("serves pages on the app itself, and shows the app's connector address in the guide everywhere", async () => {
+    expect((await open(`${APP}/`)).status).toBe(200);
+    expect(await (await open(`${SITE}/guide`)).text()).toContain(`${APP}/mcp`);
+  });
+
+  it("changes nothing when no app address is set", async () => {
+    const res = await devApp(false).handle(new Request(`${OLD}/guide`));
+    expect(res.status).toBe(200);
+  });
+});
+

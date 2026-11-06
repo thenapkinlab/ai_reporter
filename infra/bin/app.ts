@@ -37,4 +37,7 @@ new GatewayStack(app, "AgentGateway", {
   contactEmail: get("contactEmail"),
   customDomain: get("customDomain"),
   certificateArn: get("certificateArn"),
+  appDomain: get("appDomain"),
+  appCertificateArn: get("appCertificateArn"),
+  appLive: get("appLive") === "true",
 });

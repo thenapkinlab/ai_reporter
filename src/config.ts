@@ -22,6 +22,13 @@ export interface Config {
   inviteOnly?: boolean;
   /** Where testers can reach the person running the beta (shown on the notice and guide). */
   contactEmail?: string;
+  /**
+   * Where the dashboard, sign-in and connector live, and the public site's address. When set,
+   * only the site's public pages stay elsewhere: other pages redirect here. /mcp stays wherever
+   * it's called, so existing connectors keep working.
+   */
+  appOrigin?: string;
+  siteOrigin?: string;
   /** Sends a technical log with no content to Langfuse (src/trace.ts). Off when unset. */
   langfuse?: LangfuseKeys;
 }
