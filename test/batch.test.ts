@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BATCH_SIZE, processEmails, type EngineDeps } from "../src/filter/engine";
+import { BATCH_SIZE, filterNote, processEmails, type EngineDeps } from "../src/filter/engine";
 import { batchMessage, batchPrompt, parseBatchLabels, type ClassifyInput, type Classifier, type Label } from "../src/filter/classifier";
 import { FIXTURE_EMAILS } from "../src/fixtures";
 import type { Email } from "../src/mail";
@@ -54,7 +54,7 @@ describe("batched classification", () => {
 
   it("withholds every email the model left unanswered (values can't be removed without it)", async () => {
     const emails = [FIXTURE_EMAILS.find((e) => e.id === "fx-lab")!, FIXTURE_EMAILS.find((e) => e.id === "fx-flight")!];
-    const { c } = counting((xs) => xs.map(() => null));
+    const c: Classifier = { classify: async () => { throw new Error("no answer"); }, classifyBatch: async (xs) => xs.map(() => null) };
     const ds = await processEmails(emails, deps(c));
     expect(ds.map((d) => d.action)).toEqual(["withheld", "withheld"]);
     expect(ds[1]!.because).toEqual(["unchecked (model unavailable)"]);
@@ -68,8 +68,70 @@ describe("batched classification", () => {
     expect(ds.every((d) => d.action === "shared")).toBe(true);
   });
 
+  it("retries a failed batch in two halves, so one bad email can't sink the rest", async () => {
+    const calls: string[][] = [];
+    const bad = "Hello 3";
+    const c: Classifier = {
+      classify: async (x) => { if (x.subject === bad) throw new Error("no answer"); return other(); },
+      classifyBatch: async (xs) => {
+        calls.push(xs.map((x) => x.subject));
+        // Like hitting the output limit: nothing usable from any batch holding the bad email.
+        return xs.some((x) => x.subject === bad) ? xs.map(() => null) : xs.map(other);
+      },
+    };
+    const ds = await processEmails(mail(10), deps(c));
+    expect(calls.map((x) => x.length)).toEqual([10, 5, 5]);
+    expect(ds.filter((d) => d.action === "shared")).toHaveLength(5);
+    expect(ds.filter((d) => d.action === "withheld")).toHaveLength(5);
+  });
+
+  it("doesn't report a keyword guess as the reason when the model failed", async () => {
+    const email = { ...mail(1)[0]!, subject: "Your account statement", body: "Your statement is ready. Payment due soon, loan and mortgage details." };
+    const c: Classifier = { classify: async () => { throw new Error("down"); } };
+    const [d] = await processEmails([email], deps(c));
+    expect(d!.action).toBe("withheld");
+    expect(d!.because).toEqual(["unchecked (model unavailable)"]);
+    const note = filterNote([d!]);
+    expect(note).toContain("couldn't be checked");
+    expect(note).not.toContain("privacy settings");
+  });
+
+  it("only returns text the filter checked: long emails are cut, and a batch's label isn't reused for them", async () => {
+    const secretAtEnd = "x ".repeat(12000) + "Where: Flat 9, Made Up House";
+    const email: Email = { ...mail(1)[0]!, body: secretAtEnd };
+    const cache = new Map<string, Label>([[email.id, other()]]);
+    let asked = "";
+    const c: Classifier = { classify: async (x) => { asked = x.text; return other(); } };
+    const [d] = await processEmails([email], deps(c, cache));
+    expect(asked.length).toBeGreaterThan(4000); // went back to the model despite the cached label
+    expect(d!.filtered!.body).not.toContain("Flat 9");
+    expect(d!.filtered!.body).toContain("Rest of this email not shown");
+  });
+
+  it("still reuses a cached label for a short email", async () => {
+    const email = mail(1)[0]!;
+    const { c, calls } = counting((xs) => xs.map(other));
+    await processEmails([email], deps(c, new Map([[email.id, other()]])));
+    expect(calls).toEqual([]);
+  });
+
+  it("removes attachment names that reveal a sensitive document, and shows the model every name", async () => {
+    const email: Email = { ...mail(1)[0]!, body: "y ".repeat(5000), attachments: [{ filename: "Passport_scan.pdf", mimeType: "application/pdf", size: 9 }, { filename: "menu.pdf", mimeType: "application/pdf", size: 9 }] };
+    let asked = "";
+    const c: Classifier = { classify: async (x) => { asked = x.text; return other(); } };
+    const [d] = await processEmails([email], deps(c));
+    expect(asked.slice(0, 200)).toContain("menu.pdf");
+    expect(d!.action).toBe("redacted");
+    expect(d!.because).toEqual(["sensitive document name"]);
+    expect(d!.filtered!.attachments.map((a) => a.filename)).toEqual(["[removed: document name]", "menu.pdf"]);
+    const released = deps(c);
+    released.policy.releasedMessages.add(email.id);
+    const [r] = await processEmails([email], released);
+    expect(r!.action).toBe("shared");
+  });
+
   it("treats a failed request as unanswered", async () => {
-    const c: Classifier = { classify: async () => other(), classifyBatch: async () => { throw new Error("throttled"); } };
+    const c: Classifier = { classify: async () => { throw new Error("throttled"); }, classifyBatch: async () => { throw new Error("throttled"); } };
     const ds = await processEmails(mail(3), deps(c));
     expect(ds.every((d) => d.label.source === "fallback")).toBe(true);
   });

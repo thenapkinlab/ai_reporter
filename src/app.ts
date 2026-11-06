@@ -16,8 +16,9 @@ import { GMAIL_SCOPE, GmailMailbox, exchangeCode, gmailAddress, googleAuthUrl, r
 import type { Mailbox } from "./mail";
 import { handleMcp, toolError, type ToolBackend } from "./mcp";
 import { GatewayService } from "./service";
+import { createTracer } from "./trace";
 import { checkState, clearSessionCookie, makeState, readSession, sessionCookie, workosAuthenticate, workosAuthorizeUrl, workosUserEmail, type Session } from "./session";
-import type { Accounts } from "./store/types";
+import type { Accounts, Assistant } from "./store/types";
 import { activityPage, guidePage, noticePage, notInvitedPage, devLoginPage, html, landingPage, messagePage, runPage, settingsPage, setupPage, type Nav } from "./dashboard/pages";
 
 export interface AppDeps {
@@ -51,6 +52,7 @@ function sameOrigin(request: Request, url: URL): boolean {
 export function createApp(deps: AppDeps) {
   const { config: cfg, accounts } = deps;
   const limits = cfg.limits ?? DEFAULT_LIMITS;
+  const trace = createTracer(cfg.langfuse);
   const inviteOnly = !cfg.dev && cfg.inviteOnly !== false;
   const contactLine = cfg.contactEmail ? `To join, email ${cfg.contactEmail}.` : "Ask the person running the beta to add you.";
   // One shared per-minute budget for the classifier, across all users and Lambda instances.
@@ -96,7 +98,7 @@ export function createApp(deps: AppDeps) {
       // Invite-only beta: find the caller's email (token, our profile, or WorkOS) before anything is stored.
       const email = String(caller.claims.email ?? "") || (await accounts.profileEmail(userId)) || (await workosUserEmail(cfg, userId)) || "";
       if (inviteOnly && !(await accounts.isAllowed(email))) {
-        return handleMcp(request, failing(`This is an invite-only beta and ${email || "this account"} isn't on the tester list. ${contactLine}`, "not_invited"));
+        return handleMcp(request, failing(`This is an invite-only beta and ${email || "this account"} isn't on the tester list. ${contactLine}`, "not_invited", undefined, identifyAssistant(clientId, request.headers.get("user-agent"))));
       }
       await accounts.ensureUser(userId, email);
     }
@@ -111,14 +113,14 @@ export function createApp(deps: AppDeps) {
       const mailbox = await mailboxFor(userId);
       if (!mailbox) {
         const msg = `Gmail isn't connected. Ask the user to connect it at ${url.origin}/setup.`;
-        backend = failing(msg, "no_gmail", async (tool, query) => store.recordFailure(newRunId(new Date(), randomId()), { ...meta, tool, query }, "no_gmail", null, new Date()));
+        backend = failing(msg, "no_gmail", async (tool, query) => store.recordFailure(newRunId(new Date(), randomId()), { ...meta, tool, query }, "no_gmail", null, new Date()), meta.assistant);
       } else {
         const engine: EngineDeps = {
           classifier,
           cache: store.labelCache(),
           policy: await store.policy(cfg.withholdThreshold),
         };
-        backend = new GatewayService(mailbox, engine, store, meta, limits);
+        backend = new GatewayService(mailbox, engine, store, meta, limits, undefined, trace);
       }
     } catch (e) {
       const ref = logError("gmail_setup_failed", e);
@@ -126,17 +128,18 @@ export function createApp(deps: AppDeps) {
       backend = failing(msg, "gmail_unavailable", async (tool, query) => {
         countMetric("ToolFailures");
         await store.recordFailure(newRunId(new Date(), randomId()), { ...meta, tool, query }, "gmail_unavailable", ref, new Date());
-      });
+      }, meta.assistant, ref);
     }
     return handleMcp(request, backend);
   }
 
   /** A backend whose tools only return `msg`, counted under `outcome`. */
-  function failing(msg: string, outcome: string, record?: (tool: string, query: string) => Promise<void>): ToolBackend {
+  function failing(msg: string, outcome: string, record?: (tool: string, query: string) => Promise<void>, assistant: Assistant = "unknown", errorRef?: string): ToolBackend {
     const fail = async (tool: string, query: string) => {
       countMetric("ToolCalls", 1, { Tool: tool, Outcome: outcome });
       // Shown in the user's Activity. Not called for people who aren't invited: nothing is stored about them.
       await record?.(tool, query).catch((e) => void logError("record_failure_failed", e, { tool }));
+      await trace({ tool, outcome, assistant, errorRef });
       return toolError(msg);
     };
     return { searchEmail: (query) => fail("search_email", query), readEmail: (id) => fail("read_email", id) };
@@ -283,7 +286,7 @@ export function createApp(deps: AppDeps) {
       }
       if (path === "/logout" && request.method === "POST") return redirect("/", [clearSessionCookie()]);
       if (path === "/guide") return html(guidePage(resourceUrl(url.origin), cfg.contactEmail ?? null));
-      if (path === "/notice") return html(noticePage(cfg.contactEmail ?? null));
+      if (path === "/notice") return html(noticePage(cfg.contactEmail ?? null, !!cfg.langfuse));
 
       const session = await readSession(request, cfg);
       if (path === "/") return session ? redirect("/activity") : html(landingPage(cfg.dev));

@@ -33,7 +33,7 @@ Only emails on the tester allow list can sign in to the dashboard or use the con
 "invite-only" page and nothing about them is stored. Removing someone takes effect on their next request.
 
 ```bash
-npm run testers -- add tester@example.com     # also add their Gmail address as a Google test user
+npm run testers -- add tester@example.com     # the email they sign in with
 npm run testers -- list
 npm run testers -- remove tester@example.com
 ```
@@ -165,6 +165,16 @@ curl -s -X POST http://localhost:8787/mcp -H 'authorization: Bearer dev' -H 'x-d
 `npm test` runs the tests. `npm run typecheck` type-checks. `npm run synth` builds the CloudFormation template
 without deploying.
 
+## Technical log in Langfuse (optional)
+
+Add `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` under the SSM prefix (use a separate Langfuse project from the
+benchmarks) and each tool call sends one record to Langfuse. It's off without the keys; new Lambda instances pick them up.
+
+Sent: tool, assistant, outcome, prompt version, counts of shared/redacted/withheld emails, reason types, timings, error type
+and reference. Never sent: user IDs, email addresses, searches, message IDs, senders, subjects, bodies or model output.
+`src/trace.ts` builds each record from numbers and fixed lists, so free text can't get in. Requests wait up to 800 ms for
+the send, and a failure is only logged.
+
 ## Evaluate the classifier
 
 `eval/dataset.json` holds ~90 synthetic, labelled emails: clear and hard cases, look-alikes that must not be
@@ -189,6 +199,16 @@ The report (`eval/results/<timestamp>.md`) shows, per model (positive = should b
 
 plus a threshold sweep (recall and FPR), accuracy by case type, the confusion matrix, and every false negative
 and false positive. The prompt version is stamped on each report.
+
+### Compare runs in Langfuse (optional)
+
+`npm run eval -- --langfuse` also sends the results to [Langfuse](https://langfuse.com), to compare models and prompt
+versions side by side. Put `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in `.env` (git-ignored). This covers
+benchmarks only: the SDK is a dev dependency. The gateway's own technical log is separate (see below).
+
+No email text is sent, not even from made-up cases. Dev runs send case IDs, tags, decisions and scores; validation and
+test send run totals only, so their mistakes can't be read. Look a case's text up by ID in `eval/dataset.json` or
+`eval/external/`.
 
 ## Evaluate the redactor
 
@@ -272,11 +292,11 @@ MTSamples' original terms are unclear, so it's for internal benchmarking only an
    (`authkitDomain`, `workosClientId`) and the email addresses for alarms and the testers' contact.
 5. After the first deploy, add the redirect URI `<GatewayUrl>auth/callback`.
 
-### 3. Google Cloud (free; Testing mode allows up to 100 test users)
+### 3. Google Cloud (free; an unverified app is limited to about 100 users)
 
 1. Create a project, then enable the **Gmail API**.
-2. OAuth consent screen: External, **Testing**, add each tester's Google account as a test user,
-   add the scope `.../auth/gmail.readonly`.
+2. OAuth consent screen: External. In **Testing** mode, add each tester's Google account as a test user; once published, testers only need adding with `npm run testers`.
+   Add the scope `.../auth/gmail.readonly`.
 3. Credentials → Create OAuth client ID → **Web application**. After the first deploy, add the redirect URI
    `<GatewayUrl>gmail/callback`.
 

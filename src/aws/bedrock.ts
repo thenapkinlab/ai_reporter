@@ -39,9 +39,9 @@ export class BedrockClassifier implements Classifier {
         modelId: this.modelId,
         system: [{ text: CLASSIFIER_PROMPT }],
         messages: [
-          { role: "user", content: [{ text: `From: ${input.from}\nSubject: ${input.subject}\n\n${input.text.slice(0, 6000)}` }] },
+          { role: "user", content: [{ text: `From: ${input.from}\nSubject: ${input.subject}\n\n${input.text.slice(0, SINGLE_CHARS)}` }] },
         ],
-        inferenceConfig: { maxTokens: 400, temperature: 0 },
+        inferenceConfig: { maxTokens: 800, temperature: 0 },
       }),
     );
     this.onCall?.({
@@ -63,7 +63,7 @@ export class BedrockClassifier implements Classifier {
         modelId: this.modelId,
         system: [{ text: batchPrompt(marker) }],
         messages: [{ role: "user", content: [{ text: batchMessage(marker, inputs, BATCH_CHARS_PER_EMAIL) }] }],
-        inferenceConfig: { maxTokens: 120 + 200 * inputs.length, temperature: 0 },
+        inferenceConfig: { maxTokens: 120 + 300 * inputs.length, temperature: 0 },
       }),
     );
     this.onCall?.({
@@ -81,3 +81,5 @@ export class BedrockClassifier implements Classifier {
 
 /** Per-email text budget inside a batch (about 1,000 tokens each). */
 export const BATCH_CHARS_PER_EMAIL = 4000;
+/** Text budget when one email is checked on its own: read_email returns the body, so all of it must be read. */
+const SINGLE_CHARS = 20000;

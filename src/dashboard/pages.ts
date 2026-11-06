@@ -102,7 +102,7 @@ export function notInvitedPage(email: string, contactEmail: string | null): stri
   );
 }
 
-export function noticePage(contactEmail: string | null): string {
+export function noticePage(contactEmail: string | null, technicalLog = false): string {
   return layout(
     "Beta notice",
     `<h1>Beta notice</h1>
@@ -118,7 +118,8 @@ export function noticePage(contactEmail: string | null): string {
        <li>Medical and financial emails (lab results, bank statements, payslips…) are withheld completely.</li>
        <li>In other emails, card and bank numbers, ID numbers, passwords and keys, one-time codes, home addresses and dates of birth are
        replaced with <code>[removed: …]</code>.</li>
-       <li>Attachments are never opened or sent. The assistant only sees their names.</li>
+       <li>Attachments are never opened or sent. The assistant only sees their names, and names that reveal a sensitive document, like "passport", are removed too.</li>
+       <li>Very long emails are cut off where the filter stops checking, and the assistant is told.</li>
        <li>Everything that isn't withheld or removed goes to your assistant and is handled under that assistant's own terms.</li>
      </ul>
 
@@ -141,6 +142,9 @@ export function noticePage(contactEmail: string | null): string {
      <p>The service runs on Amazon Web Services in Stockholm (EU), and the filter's AI model runs on Amazon Bedrock in EU regions.
      Sign-in uses WorkOS. Gmail access uses Google's API. Only you see your dashboard. The person running the beta can technically
      access the stored records above to operate the service, but never email content, because it isn't kept.</p>
+     ${technicalLog ? `<p>A technical log of each request goes to Langfuse, in the EU: the time, assistant, tool, result, counts of shared, redacted and
+     withheld emails, reason types (for example "medical"), timings and error types. It has no email content, searches, message IDs,
+     names, email addresses or account IDs.</p>` : ""}
 
      <h2>Leaving</h2>
      <p>Disconnect Gmail on Setup, or delete everything in Settings → "Delete my data", which also revokes our Google access. You can
@@ -161,10 +165,9 @@ export function guidePage(mcpUrl: string, contactEmail: string | null): string {
      <p>Send ${contact(contactEmail)}:</p>
      <ul>
        <li>the email you'll sign in with;</li>
-       <li>the Gmail address you'll connect;</li>
        <li>which assistant you use.</li>
      </ul>
-     <p>Wait for a confirmation first. Google and the sign-in page both block addresses that haven't been added.</p>
+     <p>Wait for a confirmation first. The sign-in page blocks addresses that haven't been added.</p>
 
      <h2>2. Sign in and connect Gmail</h2>
      <ol>
@@ -174,9 +177,9 @@ export function guidePage(mcpUrl: string, contactEmail: string | null): string {
      </ol>
 
      <h2>3. Add the connector to your assistant</h2>
+     <div class="notice"><b>First, turn off your assistant's built-in Gmail or Google Workspace access.</b> If it stays on, your assistant can read your email, including attachments, without going through the filter, and anything you test won't reflect this product.</div>
      <p>Claude is the only assistant we've tested, and Muse support is the least certain. For the others, you're finding out with us: menus change often, so tell us if a step doesn't match.</p>
      ${assistantSteps(mcpUrl)}
-     <div class="notice"><b>Don't skip turning off the built-in Gmail connector.</b> If it stays on, your assistant can read your email without going through the filter.</div>
 
      <h2>4. Check it works</h2>
      <ol>

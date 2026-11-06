@@ -1552,6 +1552,149 @@
    ],
    "keep": [],
    "notSensitive": []
+  },
+  {
+   "id": "cal-en-01",
+   "tags": [
+    "events",
+    "calendar"
+   ],
+   "expect": "redact",
+   "from": "Priya Shah <priya.s@mail.example>",
+   "subject": "Invitation: Xmas lunch with the crew @ Sat 13 Dec 1pm",
+   "body": "Xmas lunch with the crew\n\nWhen\nSaturday 13 Dec, 1pm – 4pm (GMT)\n\nWhere\nFlat 7, Birchwood Court, 22 Fern Lane, London E3 9ZZ\n\nWho\nPriya Shah - organiser\nsam.t@mail.example\nnina.r@mail.example\n\nBring a dish to share!",
+   "remove": [
+    {
+     "item": "home_address",
+     "value": "Flat 7, Birchwood Court, 22 Fern Lane, London E3 9ZZ"
+    }
+   ],
+   "keep": [
+    "Saturday 13 Dec"
+   ],
+   "notSensitive": [
+    "sam.t@mail.example"
+   ],
+   "question": "What time is the lunch?",
+   "answer": [
+    "1pm"
+   ]
+  },
+  {
+   "id": "cal-en-02",
+   "tags": [
+    "events",
+    "calendar"
+   ],
+   "expect": "redact",
+   "from": "Tom Reed <tom.r@mail.example>",
+   "subject": "BBQ at ours on Sunday",
+   "body": "Hi both,\nWe're doing a BBQ on Sunday from 2pm at ours: 14 Larch Road, Leeds LS6 9XX. Kids welcome.\nTom",
+   "remove": [
+    {
+     "item": "home_address",
+     "value": "14 Larch Road, Leeds LS6 9XX"
+    }
+   ],
+   "keep": [
+    "Sunday"
+   ],
+   "notSensitive": []
+  },
+  {
+   "id": "cal-en-03",
+   "tags": [
+    "events",
+    "calendar",
+    "business-address"
+   ],
+   "expect": "share",
+   "from": "Priya Shah <priya.s@mail.example>",
+   "subject": "Invitation: Team dinner @ Thu 8pm",
+   "body": "Team dinner\n\nWhen\nThursday, 8pm\n\nWhere\nThe Olive Tree Restaurant, 5 Market Street, London W1 8ZZ\n\nWho\nPriya Shah - organiser\nsam.t@mail.example",
+   "remove": [],
+   "keep": [
+    "Thursday"
+   ],
+   "notSensitive": [
+    "The Olive Tree Restaurant, 5 Market Street, London W1 8ZZ",
+    "sam.t@mail.example"
+   ]
+  },
+  {
+   "id": "cal-de-01",
+   "tags": [
+    "events",
+    "calendar",
+    "lang:de"
+   ],
+   "expect": "redact",
+   "from": "Lena Vogt <lena.v@mail.example>",
+   "subject": "Einladung: Geburtstagsfeier am Samstag",
+   "body": "Wann: Samstag, 19 Uhr\nWo: bei mir, Lindenweg 12, 50667 Köln\nBis dann!",
+   "remove": [
+    {
+     "item": "home_address",
+     "value": "Lindenweg 12, 50667 Köln"
+    }
+   ],
+   "keep": [
+    "Samstag"
+   ],
+   "notSensitive": []
+  },
+  {
+   "id": "link-en-01",
+   "tags": [
+    "no-pii",
+    "links"
+   ],
+   "expect": "share",
+   "from": "Offers <news@shop.example>",
+   "subject": "Holiday sale: 40% off",
+   "body": "Our holiday sale is on. Use code SAVE40 at checkout.\nShop now: https://t.shop.example/click?utm_source=mail&utm_campaign=xmas&cid=Ab3De5Gh7Jk9Mn1Pq3St\nUnsubscribe: https://t.shop.example/unsubscribe?token=aB3dE5gH7jK9mN1pQ3sT5vX7",
+   "remove": [],
+   "keep": [
+    "SAVE40"
+   ],
+   "notSensitive": []
+  },
+  {
+   "id": "link-en-02",
+   "tags": [
+    "no-pii",
+    "links"
+   ],
+   "expect": "share",
+   "from": "Rides <promo@rides.example>",
+   "subject": "£5 off your next ride",
+   "body": "Here's £5 off your next ride with code RIDE5X92Q.\nClaim it: https://rides.example/offer/8f3A92kLm0Qz7Xc1Vb4N?ref=mail",
+   "remove": [],
+   "keep": [
+    "RIDE5X92Q"
+   ],
+   "notSensitive": []
+  },
+  {
+   "id": "link-en-03",
+   "tags": [
+    "credentials",
+    "links"
+   ],
+   "expect": "redact",
+   "from": "App <no-reply@app.example>",
+   "subject": "Reset your password",
+   "body": "Click to reset your password:\nhttps://app.example/reset-password?token=qW3eR5tY7uI9oP1aS3dF5gH7\nThis link expires in 1 hour.",
+   "remove": [
+    {
+     "item": "credentials",
+     "value": "qW3eR5tY7uI9oP1aS3dF5gH7"
+    }
+   ],
+   "keep": [
+    "1 hour"
+   ],
+   "notSensitive": []
   }
  ]
 }

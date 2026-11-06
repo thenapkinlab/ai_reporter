@@ -32,7 +32,7 @@ export function prepare(c: EvalCase): Prepared {
   // Mirrors the engine: attachment contents are never read, only their names.
   const atts = c.attachments ?? [];
   const names = atts.map((a) => a.filename);
-  const text = `${c.subject}\n${c.body}${names.length ? `\n[Attachment names: ${names.join(", ")}]` : ""}`.slice(0, 20000);
+  const text = `${c.subject}\n${names.length ? `[Attachment names: ${names.join(", ")}]\n` : ""}${c.body}`.slice(0, 20000);
   const hits = [...detect(c.subject), ...detect(c.body), ...names.flatMap((n) => detect(n))];
   const signals = computeSignals(senderDomain(c.from), text, hits);
   return {

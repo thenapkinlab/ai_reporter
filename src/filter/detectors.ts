@@ -245,8 +245,20 @@ const RULES: Rule[] = [
   },
 ];
 
+const URL_RE = /https?:\/\/[^\s<>"')\]]+/gi;
+// Tracking and mailing-list links. Tokens in these aren't secrets; login and reset links don't match, so theirs still count.
+const TRACKING_URL = /unsubscribe|opt-?out|email[-_]?preferences|tracking|click|pixel|utm_|\/open\b/i;
+
+/** Inside a link, an ID-looking parameter is never a real ID, and a tracking link's token is never a secret. */
+function ignoredInUrl(type: DetectorType, start: number, urls: { start: number; end: number; tracking: boolean }[]): boolean {
+  if (type !== "id_number" && type !== "secret") return false;
+  const url = urls.find((u) => start >= u.start && start < u.end);
+  return !!url && (type === "id_number" || url.tracking);
+}
+
 export function detect(text: string): Hit[] {
   const hits: Hit[] = [];
+  const urls = [...text.matchAll(URL_RE)].map((m) => ({ start: m.index, end: m.index + m[0].length, tracking: TRACKING_URL.test(m[0]) }));
   for (const rule of RULES) {
     rule.re.lastIndex = 0;
     for (const m of text.matchAll(rule.re)) {
@@ -256,6 +268,7 @@ export function detect(text: string): Hit[] {
       if (rule.check && !rule.check(value)) continue;
       const offset = g === 0 ? 0 : m[0].indexOf(value);
       const start = m.index + offset;
+      if (ignoredInUrl(rule.type, start, urls)) continue;
       hits.push({ type: rule.type, start, end: start + value.length, masked: mask(value) });
     }
   }

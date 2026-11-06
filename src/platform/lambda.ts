@@ -32,6 +32,10 @@ async function build() {
     inviteOnly: env.INVITE_ONLY !== "false",
     contactEmail: env.CONTACT_EMAIL || undefined,
     dev: false, // never on Lambda
+    langfuse:
+      secrets.LANGFUSE_PUBLIC_KEY && secrets.LANGFUSE_SECRET_KEY
+        ? { publicKey: secrets.LANGFUSE_PUBLIC_KEY, secretKey: secrets.LANGFUSE_SECRET_KEY, baseUrl: env.LANGFUSE_BASE_URL || "https://cloud.langfuse.com" }
+        : undefined,
   };
   // Bedrock can run in a different region from the rest of the stack.
   // Extra retries with backoff absorb short bursts over the per-minute request limit.
