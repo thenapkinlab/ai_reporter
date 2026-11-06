@@ -144,3 +144,25 @@ describe("invite-only beta", () => {
   });
 });
 
+describe("public pages", () => {
+  const get = async (path: string) => {
+    const res = await devApp(false).handle(new Request(`${ORIGIN}${path}`));
+    return { status: res.status, body: await res.text() };
+  };
+
+  it("serves a home page that explains the app and links to the privacy policy, without signing in", async () => {
+    const { status, body } = await get("/");
+    expect(status).toBe(200);
+    expect(body).toContain("Warded");
+    expect(body).toContain('href="/privacy"');
+    expect(body).not.toContain("Private Gmail");
+  });
+
+  it("serves a privacy policy with Google's Limited Use statement, without signing in", async () => {
+    const { status, body } = await get("/privacy");
+    expect(status).toBe(200);
+    expect(body).toContain("Limited Use requirements");
+    expect(body).toContain("gmail.readonly");
+    expect(body).not.toContain("__");
+  });
+});

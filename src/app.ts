@@ -19,7 +19,7 @@ import { GatewayService } from "./service";
 import { createTracer } from "./trace";
 import { checkState, clearSessionCookie, makeState, readSession, sessionCookie, workosAuthenticate, workosAuthorizeUrl, workosUserEmail, type Session } from "./session";
 import type { Accounts, Assistant } from "./store/types";
-import { activityPage, guidePage, noticePage, notInvitedPage, devLoginPage, html, landingPage, messagePage, runPage, settingsPage, setupPage, type Nav } from "./dashboard/pages";
+import { activityPage, guidePage, noticePage, notInvitedPage, privacyPage, devLoginPage, html, landingPage, messagePage, runPage, settingsPage, setupPage, type Nav } from "./dashboard/pages";
 
 export interface AppDeps {
   config: Config;
@@ -287,6 +287,7 @@ export function createApp(deps: AppDeps) {
       if (path === "/logout" && request.method === "POST") return redirect("/", [clearSessionCookie()]);
       if (path === "/guide") return html(guidePage(resourceUrl(url.origin), cfg.contactEmail ?? null));
       if (path === "/notice") return html(noticePage(cfg.contactEmail ?? null, !!cfg.langfuse));
+      if (path === "/privacy") return html(privacyPage(cfg.contactEmail ?? null));
 
       const session = await readSession(request, cfg);
       if (path === "/") return session ? redirect("/activity") : html(landingPage(cfg.dev));

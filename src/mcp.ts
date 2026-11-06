@@ -4,7 +4,7 @@
 import { agentMessage, classifyError, logError } from "./logging";
 
 export const SUPPORTED_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"];
-export const SERVER_INFO = { name: "private-gmail-gateway", version: "0.1.0" };
+export const SERVER_INFO = { name: "warded-gateway", version: "0.1.0" };
 
 export interface ToolResult {
   content: { type: "text"; text: string }[];

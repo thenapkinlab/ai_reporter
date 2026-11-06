@@ -49,6 +49,6 @@ createServer(async (req, res) => {
   res.writeHead(response.status, out);
   res.end(Buffer.from(await response.arrayBuffer()));
 }).listen(PORT, () => {
-  console.log(`Private Gmail gateway (dev) on http://localhost:${PORT}`);
+  console.log(`Warded gateway (dev) on http://localhost:${PORT}`);
   console.log(`MCP endpoint: http://localhost:${PORT}/mcp  (header: authorization: Bearer dev)`);
 });
