@@ -30,6 +30,7 @@ export interface AppDeps {
   devMailbox?: () => Mailbox;
 }
 
+const PUBLIC_PAGES = new Set(["/", "/privacy", "/guide", "/notice"]);
 const DEV_USER = { id: "dev_user", email: "dev@localhost" };
 
 function redirect(location: string, cookies: string[] = []): Response {
@@ -251,6 +252,14 @@ export function createApp(deps: AppDeps) {
 
   // ------------------------------------------------------------ router
 
+  /** Where a page should be read instead, if this address isn't its home. */
+  function movedTo(request: Request, url: URL): string | null {
+    if (!cfg.appOrigin || url.origin === cfg.appOrigin) return null;
+    if (request.method !== "GET" && request.method !== "HEAD") return null;
+    if (url.origin === cfg.siteOrigin && PUBLIC_PAGES.has(url.pathname)) return null;
+    return `${cfg.appOrigin}${url.pathname}${url.search}`;
+  }
+
   async function handle(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -259,6 +268,8 @@ export function createApp(deps: AppDeps) {
         return json(protectedResourceMetadata(url.origin, cfg.authkitDomain));
       if (path === "/.well-known/oauth-authorization-server") return await authServerMetadata(cfg.authkitDomain);
       if (path === "/mcp") return await mcp(request, url);
+      const moved = movedTo(request, url);
+      if (moved) return redirect(moved);
 
       if (path === "/login") {
         if (cfg.dev) return html(devLoginPage());
@@ -285,7 +296,7 @@ export function createApp(deps: AppDeps) {
         ]);
       }
       if (path === "/logout" && request.method === "POST") return redirect("/", [clearSessionCookie()]);
-      if (path === "/guide") return html(guidePage(resourceUrl(url.origin), cfg.contactEmail ?? null));
+      if (path === "/guide") return html(guidePage(resourceUrl(cfg.appOrigin ?? url.origin), cfg.contactEmail ?? null));
       if (path === "/notice") return html(noticePage(cfg.contactEmail ?? null, !!cfg.langfuse));
       if (path === "/privacy") return html(privacyPage(cfg.contactEmail ?? null));
 

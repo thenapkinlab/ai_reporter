@@ -53,6 +53,11 @@ export interface GatewayStackProps extends StackProps {
    */
   customDomain?: string;
   certificateArn?: string;
+  /** The app's own address (e.g. app.aireporter.dev) and its certificate: dashboard, sign-in and connector. */
+  appDomain?: string;
+  appCertificateArn?: string;
+  /** Send pages to appDomain. Turn on only once its DNS and redirect URLs work, or old links break. */
+  appLive?: boolean;
   /** Where CloudWatch alarms are emailed (the operator, never users). Falls back to budgetEmail. */
   alarmEmail?: string;
 }
@@ -111,6 +116,8 @@ export class GatewayStack extends Stack {
         INVITE_ONLY: String(props.inviteOnly),
         ...(props.contactEmail ? { CONTACT_EMAIL: props.contactEmail } : {}),
         ...(props.mcpAudience ? { MCP_AUDIENCE: props.mcpAudience } : {}),
+        ...(props.appLive && props.customDomain ? { SITE_ORIGIN: `https://${props.customDomain}` } : {}),
+        ...(props.appLive && props.appDomain ? { APP_ORIGIN: `https://${props.appDomain}` } : {}),
       },
       bundling: {
         format: OutputFormat.ESM,
@@ -304,6 +311,15 @@ export class GatewayStack extends Stack {
       });
       new CfnOutput(this, "CustomUrl", { value: `https://${props.customDomain}/`, description: "Dashboard on the custom domain" });
       new CfnOutput(this, "ApiId", { value: api.apiId });
+      if (props.appDomain && props.appCertificateArn) {
+        const appDomain = new apigw.DomainName(this, "AppDomain", {
+          domainName: props.appDomain,
+          certificate: acm.Certificate.fromCertificateArn(this, "AppCertificate", props.appCertificateArn),
+        });
+        new apigw.ApiMapping(this, "AppMapping", { api, domainName: appDomain });
+        new CfnOutput(this, "AppDomainTarget", { value: appDomain.regionalDomainName, description: `Point ${props.appDomain} here (CNAME)` });
+        new CfnOutput(this, "AppMcpUrl", { value: `https://${props.appDomain}/mcp`, description: "Connector address" });
+      }
     }
     new CfnOutput(this, "TableName", { value: table.tableName });
   }

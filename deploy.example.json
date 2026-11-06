@@ -5,5 +5,8 @@
   "alarmEmail": "",
   "contactEmail": "",
   "customDomain": "",
-  "certificateArn": ""
+  "certificateArn": "",
+  "appDomain": "",
+  "appCertificateArn": "",
+  "appLive": ""
 }

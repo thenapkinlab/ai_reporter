@@ -32,6 +32,8 @@ async function build() {
     inviteOnly: env.INVITE_ONLY !== "false",
     contactEmail: env.CONTACT_EMAIL || undefined,
     dev: false, // never on Lambda
+    appOrigin: env.APP_ORIGIN || undefined,
+    siteOrigin: env.SITE_ORIGIN || undefined,
     langfuse:
       secrets.LANGFUSE_PUBLIC_KEY && secrets.LANGFUSE_SECRET_KEY
         ? { publicKey: secrets.LANGFUSE_PUBLIC_KEY, secretKey: secrets.LANGFUSE_SECRET_KEY, baseUrl: env.LANGFUSE_BASE_URL || "https://cloud.langfuse.com" }
