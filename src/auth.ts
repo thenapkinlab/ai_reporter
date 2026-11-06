@@ -31,7 +31,7 @@ export function protectedResourceMetadata(origin: string, authkitDomain: string)
     resource: resourceUrl(origin),
     authorization_servers: [authkitDomain],
     bearer_methods_supported: ["header"],
-    resource_name: "Private Gmail gateway",
+    resource_name: "Warded",
   };
 }
 

@@ -49,7 +49,7 @@ export interface Nav {
 }
 
 /** The name users see. Kept in one place so a rename is a one-line change. */
-const BRAND = "Private Gmail";
+const BRAND = "Warded";
 
 /** AGPL-3.0 section 13: people using the service over the network can get its source. */
 export const SOURCE_URL = "https://github.com/thenapkinlab/ai_reporter";
@@ -63,10 +63,10 @@ export function layout(title: string, body: string, nav: Nav | null): string {
        <form class="inline" method="post" action="/logout"><button class="btn">Sign out</button></form>`
     : "";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)} · Private Gmail</title><style>${CSS}</style></head>
+<title>${esc(title)} · ${BRAND}</title><style>${CSS}</style></head>
 <body><header><div class="bar"><span class="brand">${BRAND}</span>${navHtml}</div></header><main>${body}</main>
 <footer class="muted" style="max-width:960px;margin:24px auto;padding:0 16px">Open source under the AGPL-3.0:
-<a href="${SOURCE_URL}">source code</a> · <a href="/notice">beta notice</a> · <a href="/guide">tester guide</a></footer></body></html>`;
+<a href="${SOURCE_URL}">source code</a> · <a href="/privacy">privacy policy</a> · <a href="/notice">beta notice</a> · <a href="/guide">tester guide</a></footer></body></html>`;
 }
 
 export function html(page: string, status = 200, headers: Record<string, string> = {}): Response {
@@ -75,14 +75,114 @@ export function html(page: string, status = 200, headers: Record<string, string>
 
 export function landingPage(dev: boolean): string {
   return layout(
-    "Welcome",
+    "See what your AI reads in your email",
     `<h1>See what your AI reads in your email</h1>
-     <p class="muted">Private Gmail sits between Claude or ChatGPT and your inbox. It holds back medical and financial
-     emails, hides values like card numbers, and shows you every email your assistant read.</p>
-     <p><a class="btn primary" href="/login">Sign in</a></p>
-     <div class="notice">Invite-only beta. This is a personal, experimental project. Read the <a href="/notice">beta notice</a>
-     and the <a href="/guide">tester guide</a> before you connect Gmail.</div>
+     <p class="muted">${BRAND} sits between your AI assistant and your Gmail. It holds back medical and financial emails, removes
+     values like card numbers and passwords, and shows you every email your assistant read.</p>
+     <p class="row"><a class="btn primary" href="/login">Sign in</a><a class="btn" href="/guide">Read the tester guide</a></p>
+     <div class="notice">Invite-only beta. This is a personal, open-source project, and the filter can make mistakes. Read the
+     <a href="/notice">beta notice</a> before you connect Gmail.</div>
+
+     <h2>How it works</h2>
+     <ol>
+       <li><b>Your assistant asks for email.</b> You connect ${BRAND} to your assistant as a custom connector, in place of its built-in Gmail access.</li>
+       <li><b>${BRAND} checks each email first.</b> It fetches the email with read-only access, and a filter decides what your assistant may see.</li>
+       <li><b>Your assistant gets the safe version.</b> The email is shared as it is, shared with sensitive values removed, or withheld.</li>
+       <li><b>You can see what happened.</b> Your dashboard lists each request and decision, and you can release anything that was held back.</li>
+     </ol>
+
+     <h2>What it does with your email</h2>
+     <ul>
+       <li><b>Withheld:</b> medical and financial emails, by default.</li>
+       <li><b>Removed:</b> home addresses, dates of birth, ID numbers, card and bank details, passwords, keys and one-time codes.</li>
+       <li><b>Never opened:</b> attachments. Your assistant only sees their names.</li>
+       <li><b>Never stored:</b> email bodies, subjects, senders or the sensitive values themselves.</li>
+     </ul>
+     <p>${BRAND} can only read email, and can't send, change or delete anything. Read the <a href="/privacy">privacy policy</a> for
+     what's stored, for how long, and who's involved.</p>
+     <p class="muted">${BRAND} isn't affiliated with or endorsed by Google, or by any AI assistant it connects to.</p>
      ${dev ? `<p class="muted">Dev mode is on: sign-in uses a local test user and a synthetic mailbox.</p>` : ""}`,
+    null,
+  );
+}
+
+export function privacyPage(contactEmail: string | null): string {
+  const reach = contact(contactEmail);
+  return layout(
+    "Privacy policy",
+    `<h1>Privacy policy</h1>
+     <p class="muted">Last updated 6 November 2026.</p>
+     <p>${BRAND} is a personal, open-source project run by Kriti Joshi (The Napkin Lab), who is responsible for your data. For any
+     question about it, contact ${reach}.</p>
+
+     <h2>What we access from Google</h2>
+     <p>When you connect Gmail, we ask Google for one permission: to read your email (<code style="word-break:normal">gmail.readonly</code>). We use it only when
+     your AI assistant asks for email through ${BRAND}, to fetch those emails, filter them and pass on what the filter allows. We can't
+     send, change or delete email. We never download attachment contents, only their names, types and sizes.</p>
+
+     <h2>What happens to an email</h2>
+     <ol>
+       <li>It's fetched from Gmail and held in memory for the length of the request.</li>
+       <li>Its sender, subject, attachment names and up to about 20,000 characters of text go to an AI model on Amazon Bedrock, which
+       decides whether it's sensitive. Longer emails are cut off at that point before they go any further.</li>
+       <li>Depending on that decision, it goes to the AI assistant you connected, with sensitive values removed if needed, or it's held back.</li>
+     </ol>
+     <p>What reaches your assistant is then handled under that assistant's own terms.</p>
+
+     <h2>What we store</h2>
+     <div class="scroll"><table>
+       <tr><th>Data</th><th>Kept</th></tr>
+       <tr><td>Your sign-in email, Gmail address and Gmail access token (encrypted)</td><td>Until you disconnect or delete your account</td></tr>
+       <tr><td>Each request: time, assistant, tool, the search your assistant ran, and counts. A search can itself say something about you.</td><td>90 days</td></tr>
+       <tr><td>Each email: its Gmail ID, the decision, the reason types and your feedback</td><td>7 days</td></tr>
+       <tr><td>The filter's label for emails with nothing to remove, under a scrambled version of the email's ID</td><td>7 days</td></tr>
+       <tr><td>Usage counters</td><td>1 to 2 days</td></tr>
+       <tr><td>Service-wide daily totals, with no personal data</td><td>400 days</td></tr>
+     </table></div>
+     <p><b>Never stored:</b> email bodies, subjects, senders, attachments, or the sensitive values themselves.</p>
+
+     <h2>Who's involved</h2>
+     <div class="scroll"><table>
+       <tr><th>Service</th><th>What it does</th></tr>
+       <tr><td>Amazon Web Services</td><td>Runs the service in Stockholm, and the AI filter on Amazon Bedrock in EU regions</td></tr>
+       <tr><td>WorkOS</td><td>Handles sign-in, using your email address. It's a US company, so this may be processed outside the UK and EU.</td></tr>
+       <tr><td>Langfuse (EU)</td><td>Receives a technical log of each request: time, assistant, tool, result, counts, reason types, timings and error types. It has no email content, searches, message IDs, names, email addresses or account IDs.</td></tr>
+       <tr><td>Google</td><td>Provides your email through the Gmail API</td></tr>
+       <tr><td>Your AI assistant</td><td>Receives the filtered email, under its own terms</td></tr>
+     </table></div>
+
+     <h2>Google user data</h2>
+     <p>${BRAND}'s use and transfer to any other app of information received from Google APIs will adhere to the
+     <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the
+     Limited Use requirements. In particular:</p>
+     <ul>
+       <li>We use your Gmail data only to provide the filtering you asked for and to show you what happened.</li>
+       <li>We don't sell it, or use it for advertising.</li>
+       <li>We don't use it to train AI models, general or otherwise.</li>
+       <li>We only share it with the services above, as needed to run ${BRAND}, or if the law requires it.</li>
+       <li>People don't read your email. The person running the project can technically access the stored records above to operate the
+       service, but email content isn't kept.</li>
+     </ul>
+
+     <h2>Cookies</h2>
+     <p>We use one cookie to keep you signed in. We don't use advertising or analytics cookies.</p>
+
+     <h2>Your choices and rights</h2>
+     <ul>
+       <li><b>Stop access:</b> disconnect Gmail on Setup, or remove access in your Google Account under Security → Third-party connections.</li>
+       <li><b>Delete everything:</b> use "Delete my data" in Settings, which also revokes our Google access.</li>
+       <li><b>Your legal rights:</b> depending on where you live, you can ask for a copy of your data, or ask us to correct, delete or stop
+       using it. Contact ${reach}. You can also complain to your data protection authority, which in the UK is the
+       <a href="https://ico.org.uk/make-a-complaint/">Information Commissioner's Office</a>.</li>
+     </ul>
+     <p>We rely on your request for the service as the legal basis for handling your email, and on our legitimate interest in keeping it secure and working for technical logs.</p>
+
+     <h2>Security</h2>
+     <p>Your Gmail token is encrypted with AWS KMS and data is sent over HTTPS. The filter can miss things, so don't connect an inbox
+     where a single slip would be serious.</p>
+
+     <h2>Age and changes</h2>
+     <p>${BRAND} isn't for anyone under 18. If this policy changes, we'll update the date above and tell testers about significant changes.</p>`,
     null,
   );
 }
@@ -95,7 +195,7 @@ export function notInvitedPage(email: string, contactEmail: string | null): stri
     "Invite only",
     `<h1>This beta is invite-only</h1>
      <p>${email ? `<b>${esc(email)}</b> isn't on the tester list yet.` : "Your account isn't on the tester list yet."}
-     To join, contact ${contact(contactEmail)} with the email address you sign in with and the Gmail address you'd connect.</p>
+     To join, contact ${contact(contactEmail)} with the email address you sign in with.</p>
      <p class="muted">Nothing about you was stored.</p>
      <p><a href="/guide">Read the tester guide</a></p>`,
     null,
@@ -294,11 +394,18 @@ export function setupPage(
     ? `<div class="card"><b>Gmail connected:</b> ${esc(gmail.address)}
          <form class="inline" method="post" action="/gmail/disconnect"><button class="btn">Disconnect</button></form></div>`
     : `<div class="card"><b>Step 1. Connect Gmail.</b> Read-only access through Google's own sign-in screen. We never see your password.
+         <div class="notice"><b>Google will show a warning, and that's expected.</b> ${BRAND} hasn't finished Google's verification yet, so you'll see "Google hasn't verified this app".
+           <ol>
+             <li>Check the app is ${BRAND}, then click <b>Advanced</b>.</li>
+             <li>Click <b>Go to … (unsafe)</b>. Google uses that wording for every app it hasn't verified.</li>
+             <li>Allow read-only access to your email.</li>
+           </ol>
+           Only continue if you're comfortable with this. <a href="/privacy">Read what we do with your email</a>.</div>
          <form method="get" action="/gmail/connect">
            <p><label class="row"><input type="checkbox" name="ack" value="1" required> I've read the <a href="/notice" target="_blank" rel="noopener">beta notice</a>: what's read, what's stored, and that the filter can make mistakes.</label></p>
            <p><button class="btn primary">Connect Gmail</button></p>
          </form>
-         <p class="muted">Google will say it "hasn't verified this app". That's expected for a small beta: choose <b>Advanced → Go to … (unsafe)</b>, then allow read-only access.</p></div>`;
+</div>`;
   return layout(
     "Setup",
     `<h1>Setup</h1>

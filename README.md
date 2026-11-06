@@ -1,4 +1,4 @@
-# Private Gmail gateway
+# Warded: private Gmail gateway
 
 A remote MCP server that sits between AI assistants (Claude, ChatGPT) and a user's Gmail.
 It withholds medical and financial emails, removes sensitive values from every other email
