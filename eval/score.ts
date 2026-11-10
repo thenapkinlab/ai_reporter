@@ -3,7 +3,7 @@
 import { detect, type DetectorType, type Hit } from "../src/filter/detectors";
 import { computeSignals, isCandidate, type Signals } from "../src/filter/signals";
 import { fallbackLabel, ruleLabel, type Category, type Label } from "../src/filter/classifier";
-import { decide, type Policy, type Verdict } from "../src/filter/engine";
+import { decide, hasInjectionMarkers, type Policy, type Verdict } from "../src/filter/engine";
 import { senderDomain } from "../src/mail";
 
 export interface EvalCase {
@@ -65,7 +65,7 @@ export interface Outcome {
 
 /** Withhold if medical/financial, or if it contains any sensitive item we listed in the test case. */
 export function expectWithhold(c: EvalCase): boolean {
-  return c.expected !== "other" || (c.redact?.length ?? 0) > 0 || c.tags.includes("withhold");
+  return c.expected !== "other" || (c.redact?.length ?? 0) > 0 || c.tags.includes("withhold") || c.tags.includes("injection");
 }
 
 export const DEFAULT_POLICY: Policy = {
@@ -87,6 +87,7 @@ export function outcomeFor(p: Prepared, model: Label | null, modelError: string 
     candidate: p.candidate,
     released: false,
     policy: { ...DEFAULT_POLICY, threshold },
+    injectionMarkers: hasInjectionMarkers(p.text),
   });
   return {
     id: p.c.id,
