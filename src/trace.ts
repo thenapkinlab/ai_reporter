@@ -7,7 +7,7 @@
 
 import { randomBytes } from "node:crypto";
 import { ITEM_LABELS, PROMPT_VERSION } from "./filter/classifier";
-import { DOCUMENT_NAME, MODEL_UNAVAILABLE, type Decision } from "./filter/engine";
+import { DOCUMENT_NAME, MODEL_UNAVAILABLE, PROMPT_INJECTION, type Decision } from "./filter/engine";
 import { logEvent } from "./logging";
 import type { Assistant } from "./store/types";
 
@@ -34,7 +34,7 @@ export type Tracer = (t: ToolTrace) => Promise<void>;
 const TIMEOUT_MS = 800;
 const TOOLS = new Set(["search_email", "read_email"]);
 const ASSISTANTS = new Set<string>(["claude", "chatgpt", "gemini", "perplexity", "muse", "unknown"]);
-const REASONS = new Set<string>(["medical", "financial", MODEL_UNAVAILABLE, "couldn't remove safely", DOCUMENT_NAME, ...Object.values(ITEM_LABELS)]);
+const REASONS = new Set<string>(["medical", "financial", MODEL_UNAVAILABLE, "couldn't remove safely", DOCUMENT_NAME, PROMPT_INJECTION, ...Object.values(ITEM_LABELS)]);
 
 const word = (s: string | undefined | null) => (s && /^[a-z_]{1,40}$/.test(s) ? s : undefined);
 const ms = (n: number | undefined) => (Number.isFinite(n) ? Math.max(0, Math.round(n!)) : undefined);

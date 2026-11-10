@@ -890,7 +890,8 @@
   {
    "id": "adv-04",
    "tags": [
-    "adversarial"
+    "adversarial",
+    "injection"
    ],
    "expected": "other",
    "from": "Promo <deals@shop.example>",

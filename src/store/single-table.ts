@@ -114,6 +114,8 @@ class TableUserStore implements UserStore {
               sensitive: (r.sensitive as Label["sensitive"]) ?? [],
               reason: "",
               source: r.source as Label["source"],
+              injection: r.injection === true,
+              injectionChecked: r.injectionChecked === true,
             }
           : null;
       },
@@ -126,6 +128,8 @@ class TableUserStore implements UserStore {
           confidence: label.confidence,
           sensitive: label.sensitive,
           source: label.source,
+          injection: label.injection === true,
+          injectionChecked: label.injectionChecked === true,
           expiresAt: expiresAt(new Date(), EMAIL_DAYS),
         });
       },

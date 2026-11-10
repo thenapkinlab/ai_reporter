@@ -93,7 +93,7 @@ export function landingPage(dev: boolean): string {
 
      <h2>What it does with your email</h2>
      <ul>
-       <li><b>Withheld:</b> medical and financial emails, by default.</li>
+       <li><b>Withheld:</b> medical and financial emails by default, and emails that try to give instructions to your assistant.</li>
        <li><b>Removed:</b> home addresses, dates of birth, ID numbers, card and bank details, passwords, keys and one-time codes.</li>
        <li><b>Never opened:</b> attachments. Your assistant only sees their names.</li>
        <li><b>Never stored:</b> email bodies, subjects, senders or the sensitive values themselves.</li>
@@ -124,7 +124,8 @@ export function privacyPage(contactEmail: string | null): string {
      <ol>
        <li>It's fetched from Gmail and held in memory for the length of the request.</li>
        <li>Its sender, subject, attachment names and up to about 20,000 characters of text go to an AI model on Amazon Bedrock, which
-       decides whether it's sensitive. Longer emails are cut off at that point before they go any further.</li>
+       decides whether it's sensitive, and whether it tries to give instructions to your assistant (prompt injection). Longer emails are
+       cut off at that point before they go any further.</li>
        <li>Depending on that decision, it goes to the AI assistant you connected, with sensitive values removed if needed, or it's held back.</li>
      </ol>
      <p>What reaches your assistant is then handled under that assistant's own terms.</p>
@@ -216,6 +217,8 @@ export function noticePage(contactEmail: string | null, technicalLog = false): s
      <ul>
        <li>Only the emails your assistant (Claude or ChatGPT) asks for are fetched from Gmail, read-only. Your inbox is never scanned in the background.</li>
        <li>Medical and financial emails (lab results, bank statements, payslips…) are withheld completely.</li>
+       <li>Emails that try to give instructions to your assistant (prompt injection) are withheld too, and your assistant is told
+       never to follow instructions found inside an email.</li>
        <li>In other emails, card and bank numbers, ID numbers, passwords and keys, one-time codes, home addresses and dates of birth are
        replaced with <code>[removed: …]</code>.</li>
        <li>Attachments are never opened or sent. The assistant only sees their names, and names that reveal a sensitive document, like "passport", are removed too.</li>

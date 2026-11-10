@@ -148,6 +148,8 @@ describe("parseModelLabel", () => {
       reason: "bank statement",
       source: "model",
       values: [{ item: "bank_account", text: "12345678" }],
+      injection: false,
+      injectionChecked: true,
     });
   });
   it("rejects unknown categories", () => {
